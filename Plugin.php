@@ -222,7 +222,8 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         Typecho_Plugin::factory('Widget_Comments_Edit')->mark = [__CLASS__, 'commentNotifierMark'];
         Typecho_Plugin::factory('Widget_Comments_Edit')->mark_2 = [__CLASS__, 'commentByQQMark'];
         Typecho_Plugin::factory('Widget_Service')->send = [__CLASS__, 'commentNotifierSend'];
-        Typecho_Plugin::factory('Widget_Contents_Post_Edit')->finishPublish = [__CLASS__, 'autoGeneratePostSummary'];
+        Typecho_Plugin::factory('Widget_Contents_Post_Edit')->finishPublish = [__CLASS__, 'handlePostFinishPublish'];
+        Typecho_Plugin::factory('Widget_Contents_Post_Edit')->finishSave = [__CLASS__, 'handlePostFinishSave'];
         Typecho_Plugin::factory('admin/write-post.php')->bottom = array(__CLASS__, 'writePostBottom');
         Typecho_Plugin::factory('admin/write-page.php')->bottom = array(__CLASS__, 'writePageBottom');
         Typecho_Plugin::factory('Widget_Abstract_Contents')->contentEx = array('Enhancement_Plugin', 'parse');
@@ -832,6 +833,43 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $aiSummaryInputLimit->input->setAttribute('class', 'w-10');
         $form->addInput($aiSummaryInputLimit->addRule('isInteger', _t('请填写整数数字')));
+
+        $enableAiSlugTranslate = new Typecho_Widget_Helper_Form_Element_Radio(
+            'enable_ai_slug_translate',
+            array('1' => _t('启用'), '0' => _t('禁用')),
+            '0',
+            _t('<h3 class="enhancement-title">AI Slug 设置</h3>保存文章时自动翻译 Slug'),
+            _t('发布/保存文章时调用 AI 生成英文 slug 并写入数据库')
+        );
+        $form->addInput($enableAiSlugTranslate);
+
+        $aiSlugPrompt = new Typecho_Widget_Helper_Form_Element_Textarea(
+            'ai_slug_prompt',
+            null,
+            '你是 URL Slug 生成助手。请将用户提供的文章标题翻译为简洁自然的英文 slug。要求：1）只输出 slug 本身；2）仅使用小写字母、数字、连字符；3）不要输出空格、下划线、标点或解释。',
+            _t('Slug 翻译 Prompt'),
+            _t('系统提示词，可按站点风格调整')
+        );
+        $form->addInput($aiSlugPrompt->addRule('maxLength', _t('Prompt 最多5000个字符'), 5000));
+
+        $aiSlugUpdateMode = new Typecho_Widget_Helper_Form_Element_Radio(
+            'ai_slug_update_mode',
+            array('empty' => _t('仅 slug 为空时生成（推荐）'), 'always' => _t('每次保存都覆盖')),
+            'empty',
+            _t('Slug 更新策略'),
+            _t('建议选择“仅 slug 为空时生成”，避免覆盖手动设置的 slug')
+        );
+        $form->addInput($aiSlugUpdateMode);
+
+        $aiSlugMaxLength = new Typecho_Widget_Helper_Form_Element_Text(
+            'ai_slug_max_length',
+            null,
+            '80',
+            _t('Slug 最大长度'),
+            _t('生成后会进行截断，建议 30-100')
+        );
+        $aiSlugMaxLength->input->setAttribute('class', 'w-10');
+        $form->addInput($aiSlugMaxLength->addRule('isInteger', _t('请填写整数数字')));
 
         $enableAvatarMirror = new Typecho_Widget_Helper_Form_Element_Radio(
             'enable_avatar_mirror',
@@ -4115,6 +4153,26 @@ while ($tags->next()) {
         return $settings->enable_ai_summary == '1';
     }
 
+    public static function aiSlugTranslateEnabled(): bool
+    {
+        $settings = self::pluginSettings(Typecho_Widget::widget('Widget_Options'));
+        if (!isset($settings->enable_ai_slug_translate)) {
+            return false;
+        }
+        return trim((string)$settings->enable_ai_slug_translate) === '1';
+    }
+
+    public static function handlePostFinishPublish($contents, $edit)
+    {
+        self::autoGeneratePostSummary($contents, $edit);
+        self::autoTranslatePostSlug($contents, $edit);
+    }
+
+    public static function handlePostFinishSave($contents, $edit)
+    {
+        self::autoTranslatePostSlug($contents, $edit);
+    }
+
     public static function autoGeneratePostSummary($contents, $edit, $force = false)
     {
         $result = array(
@@ -4221,6 +4279,285 @@ while ($tags->next()) {
         $result['status'] = 'generated';
         $result['message'] = 'ok';
         return $result;
+    }
+
+    public static function autoTranslatePostSlug($contents, $edit, $force = false)
+    {
+        $result = array(
+            'status' => 'skipped',
+            'message' => ''
+        );
+
+        if (!self::aiSlugTranslateEnabled()) {
+            $result['message'] = 'ai slug translate disabled';
+            return $result;
+        }
+
+        if (!is_object($edit) || !isset($edit->cid)) {
+            $result['status'] = 'error';
+            $result['message'] = 'invalid post object';
+            return $result;
+        }
+
+        $cid = intval($edit->cid);
+        if ($cid <= 0) {
+            $result['status'] = 'error';
+            $result['message'] = 'invalid cid';
+            return $result;
+        }
+
+        $force = ($force === true || $force === 1 || $force === '1');
+        $options = Typecho_Widget::widget('Widget_Options');
+        $settings = self::pluginSettings($options);
+
+        $title = '';
+        if (is_array($contents) && isset($contents['title'])) {
+            $title = trim((string)$contents['title']);
+        }
+        if ($title === '' && isset($edit->title)) {
+            $title = trim((string)$edit->title);
+        }
+
+        if ($title === '') {
+            $result['message'] = 'empty title';
+            return $result;
+        }
+
+        $requestedSlug = '';
+        if (is_array($contents) && isset($contents['slug'])) {
+            $requestedSlug = trim((string)$contents['slug']);
+        }
+
+        $updateMode = isset($settings->ai_slug_update_mode) ? trim((string)$settings->ai_slug_update_mode) : 'empty';
+        if (!$force && $updateMode !== 'always') {
+            if ($requestedSlug !== '') {
+                $result['message'] = 'slug already provided';
+                return $result;
+            }
+
+            $currentSlug = self::aiSlugReadCurrentSlug($cid);
+            if ($currentSlug !== '') {
+                $result['message'] = 'slug exists';
+                return $result;
+            }
+        }
+
+        $apiResult = self::aiSlugCallApi($title, $settings);
+        if (empty($apiResult['success'])) {
+            $error = isset($apiResult['error']) ? trim((string)$apiResult['error']) : '';
+            if ($error !== '') {
+                error_log('[Enhancement][AISlug] ' . $error);
+            }
+            $result['status'] = 'error';
+            $result['message'] = ($error !== '' ? $error : 'ai api error');
+            return $result;
+        }
+
+        $slugRaw = isset($apiResult['slug']) ? (string)$apiResult['slug'] : '';
+        $slug = self::aiSlugNormalizeResult($slugRaw, $settings);
+        if ($slug === '') {
+            $result['status'] = 'error';
+            $result['message'] = 'empty slug';
+            return $result;
+        }
+
+        $saved = false;
+        if (method_exists($edit, 'applySlug')) {
+            try {
+                $savedSlug = $edit->applySlug($slug, $cid, $title);
+                $saved = (trim((string)$savedSlug) !== '');
+            } catch (Exception $e) {
+                $saved = false;
+            }
+        }
+
+        if (!$saved) {
+            try {
+                $db = Typecho_Db::get();
+                $db->query(
+                    $db->update('table.contents')
+                        ->rows(array('slug' => $slug))
+                        ->where('cid = ?', $cid)
+                );
+                $saved = true;
+            } catch (Exception $e) {
+                $saved = false;
+            }
+        }
+
+        if (!$saved) {
+            $result['status'] = 'error';
+            $result['message'] = 'save slug failed';
+            return $result;
+        }
+
+        $result['status'] = 'generated';
+        $result['message'] = 'ok';
+        return $result;
+    }
+
+    private static function aiSlugReadCurrentSlug(int $cid): string
+    {
+        if ($cid <= 0) {
+            return '';
+        }
+
+        try {
+            $db = Typecho_Db::get();
+            $row = $db->fetchRow(
+                $db->select('slug')
+                    ->from('table.contents')
+                    ->where('cid = ?', $cid)
+                    ->limit(1)
+            );
+            if (!is_array($row) || !isset($row['slug'])) {
+                return '';
+            }
+            return trim((string)$row['slug']);
+        } catch (Exception $e) {
+            return '';
+        }
+    }
+
+    private static function aiSlugCallApi(string $title, $settings): array
+    {
+        $result = array(
+            'success' => false,
+            'slug' => '',
+            'error' => ''
+        );
+
+        $endpoint = self::aiSummaryApiEndpoint(isset($settings->ai_summary_api_url) ? (string)$settings->ai_summary_api_url : '');
+        $token = isset($settings->ai_summary_api_token) ? trim((string)$settings->ai_summary_api_token) : '';
+        $model = isset($settings->ai_summary_model) ? trim((string)$settings->ai_summary_model) : '';
+        $prompt = isset($settings->ai_slug_prompt) ? trim((string)$settings->ai_slug_prompt) : '';
+
+        if ($endpoint === '' || $token === '' || $model === '') {
+            $result['error'] = 'AI 配置不完整（API 地址 / Token / 模型）';
+            return $result;
+        }
+
+        if ($prompt === '') {
+            $prompt = '请将用户提供的标题转换为英文 URL slug，只输出 slug。';
+        }
+
+        if (!function_exists('curl_init')) {
+            $result['error'] = 'curl 扩展未启用';
+            return $result;
+        }
+
+        $sourceText = '标题：' . trim($title);
+        $payload = array(
+            'model' => $model,
+            'messages' => array(
+                array(
+                    'role' => 'system',
+                    'content' => $prompt,
+                ),
+                array(
+                    'role' => 'user',
+                    'content' => $sourceText,
+                ),
+            ),
+            'temperature' => 0.1,
+        );
+
+        $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($jsonPayload === false) {
+            $result['error'] = 'AI 请求数据编码失败';
+            return $result;
+        }
+
+        $headers = array(
+            'Content-Type: application/json; charset=UTF-8',
+            'Accept: application/json',
+            'Authorization: Bearer ' . $token,
+        );
+
+        $ch = curl_init();
+        $curlOptions = array(
+            CURLOPT_URL => $endpoint,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $jsonPayload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 25,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_SSL_VERIFYPEER => false,
+        );
+
+        if (defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {
+            $curlOptions[CURLOPT_IPRESOLVE] = CURL_IPRESOLVE_V4;
+        }
+        if (defined('CURLOPT_NOSIGNAL')) {
+            $curlOptions[CURLOPT_NOSIGNAL] = true;
+        }
+
+        curl_setopt_array($ch, $curlOptions);
+
+        $response = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $errno = curl_errno($ch);
+        $error = $errno ? curl_error($ch) : '';
+        curl_close($ch);
+
+        if ($errno !== 0) {
+            $result['error'] = 'AI 请求失败：' . $error;
+            return $result;
+        }
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            $bodyPreview = trim((string)$response);
+            if ($bodyPreview !== '') {
+                $bodyPreview = self::aiSummaryTruncate($bodyPreview, 180);
+            }
+            $result['error'] = $bodyPreview === ''
+                ? ('AI 接口响应异常（HTTP ' . $httpCode . '）')
+                : ('AI 接口响应异常（HTTP ' . $httpCode . '）：' . $bodyPreview);
+            return $result;
+        }
+
+        $decoded = json_decode((string)$response, true);
+        if (!is_array($decoded)) {
+            $result['error'] = 'AI 接口响应格式错误';
+            return $result;
+        }
+
+        $slug = self::aiSummaryExtractContent($decoded);
+        if ($slug === '') {
+            if (isset($decoded['error']['message']) && trim((string)$decoded['error']['message']) !== '') {
+                $result['error'] = 'AI 接口返回错误：' . trim((string)$decoded['error']['message']);
+            } else {
+                $result['error'] = 'AI 接口未返回 slug 内容';
+            }
+            return $result;
+        }
+
+        $result['success'] = true;
+        $result['slug'] = $slug;
+        return $result;
+    }
+
+    private static function aiSlugNormalizeResult(string $slug, $settings): string
+    {
+        $slug = trim($slug);
+        if ($slug === '') {
+            return '';
+        }
+
+        $slug = preg_replace('/^```[a-zA-Z0-9_-]*\s*/', '', $slug);
+        $slug = preg_replace('/\s*```$/', '', $slug);
+        $slug = preg_replace('/^slug\s*[:：]\s*/i', '', $slug);
+        $slug = str_replace(array('"', "'", '`'), '', $slug);
+        $slug = str_replace('_', '-', $slug);
+        $slug = preg_replace('/\s+/', '-', $slug);
+        $slug = strtolower(trim((string)$slug));
+
+        $maxLen = self::aiSummaryIntSetting($settings, 'ai_slug_max_length', 80, 20, 128);
+        $slug = Typecho_Common::slugName($slug, '', $maxLen);
+        $slug = strtolower(trim((string)$slug, '-_'));
+
+        return $slug;
     }
 
     private static function aiSummaryFieldName($settings): string

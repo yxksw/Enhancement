@@ -10,22 +10,10 @@
  * @dependence 14.10.10-*
  */
 
-$enhancementS3Files = array(
-    __DIR__ . '/S3Upload/Utils.php',
-    __DIR__ . '/S3Upload/S3Client.php',
-    __DIR__ . '/S3Upload/StreamUploader.php',
-    __DIR__ . '/S3Upload/FileHandler.php'
-);
-foreach ($enhancementS3Files as $enhancementS3File) {
-    if (is_file($enhancementS3File)) {
-        require_once $enhancementS3File;
-    }
-}
-unset($enhancementS3Files, $enhancementS3File);
-
 class Enhancement_Plugin implements Typecho_Plugin_Interface
 {
     public static $commentNotifierPanel = 'Enhancement/CommentNotifier/console.php';
+    private static $s3RuntimeLoaded = null;
 
     private static function settingsBackupNamePrefix()
     {
@@ -233,11 +221,11 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         Typecho_Plugin::factory('Widget_Archive')->header = array('Enhancement_Plugin', 'archiveHeader');
         Typecho_Plugin::factory('Widget_Archive')->footer = array('Enhancement_Plugin', 'turnstileFooter');
         Typecho_Plugin::factory('Widget_Archive')->callEnhancement = array('Enhancement_Plugin', 'output_str');
-        Typecho_Plugin::factory('Widget_Upload')->uploadHandle = array('Enhancement_S3Upload_FileHandler', 'uploadHandle');
-        Typecho_Plugin::factory('Widget_Upload')->modifyHandle = array('Enhancement_S3Upload_FileHandler', 'modifyHandle');
-        Typecho_Plugin::factory('Widget_Upload')->deleteHandle = array('Enhancement_S3Upload_FileHandler', 'deleteHandle');
-        Typecho_Plugin::factory('Widget_Upload')->attachmentHandle = array('Enhancement_S3Upload_FileHandler', 'attachmentHandle');
-        Typecho_Plugin::factory('Widget_Upload')->attachmentDataHandle = array('Enhancement_S3Upload_FileHandler', 'attachmentDataHandle');
+        Typecho_Plugin::factory('Widget_Upload')->uploadHandle = array(__CLASS__, 's3UploadHandle');
+        Typecho_Plugin::factory('Widget_Upload')->modifyHandle = array(__CLASS__, 's3ModifyHandle');
+        Typecho_Plugin::factory('Widget_Upload')->deleteHandle = array(__CLASS__, 's3DeleteHandle');
+        Typecho_Plugin::factory('Widget_Upload')->attachmentHandle = array(__CLASS__, 's3AttachmentHandle');
+        Typecho_Plugin::factory('Widget_Upload')->attachmentDataHandle = array(__CLASS__, 's3AttachmentDataHandle');
         return _t($info);
     }
 
@@ -754,7 +742,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             'enable_ai_summary',
             array('1' => _t('启用'), '0' => _t('禁用')),
             '0',
-            _t('<h3 class="enhancement-title">AI 摘要设置</h3><hr/>自动生成文章摘要'),
+            _t('<h3 class="enhancement-title">AI 设置</h3><hr/>自动生成文章摘要'),
             _t('发布文章时调用 AI 生成摘要，并写入自定义字段')
         );
         $form->addInput($enableAiSummary);
@@ -833,6 +821,15 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $aiSummaryInputLimit->input->setAttribute('class', 'w-10');
         $form->addInput($aiSummaryInputLimit->addRule('isInteger', _t('请填写整数数字')));
+
+        $aiSslVerify = new Typecho_Widget_Helper_Form_Element_Radio(
+            'ai_ssl_verify',
+            array('1' => _t('启用（推荐）'), '0' => _t('禁用')),
+            '1',
+            _t('AI 请求 SSL 证书验证'),
+            _t('建议启用，避免中间人攻击；仅在目标接口证书异常时临时关闭排查')
+        );
+        $form->addInput($aiSslVerify);
 
         $enableAiSlugTranslate = new Typecho_Widget_Helper_Form_Element_Radio(
             'enable_ai_slug_translate',
@@ -4144,6 +4141,71 @@ while ($tags->next()) {
         return true;
     }
 
+    private static function loadS3Runtime(): bool
+    {
+        if (self::$s3RuntimeLoaded !== null) {
+            return self::$s3RuntimeLoaded;
+        }
+
+        $files = array(
+            __DIR__ . '/S3Upload/Utils.php',
+            __DIR__ . '/S3Upload/S3Client.php',
+            __DIR__ . '/S3Upload/StreamUploader.php',
+            __DIR__ . '/S3Upload/FileHandler.php'
+        );
+
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                self::$s3RuntimeLoaded = false;
+                return false;
+            }
+            require_once $file;
+        }
+
+        self::$s3RuntimeLoaded = class_exists('Enhancement_S3Upload_FileHandler');
+        return self::$s3RuntimeLoaded;
+    }
+
+    public static function s3UploadHandle($file)
+    {
+        if (!self::loadS3Runtime()) {
+            return false;
+        }
+        return Enhancement_S3Upload_FileHandler::uploadHandle($file);
+    }
+
+    public static function s3ModifyHandle($content, $file)
+    {
+        if (!self::loadS3Runtime()) {
+            return false;
+        }
+        return Enhancement_S3Upload_FileHandler::modifyHandle($content, $file);
+    }
+
+    public static function s3DeleteHandle($content)
+    {
+        if (!self::loadS3Runtime()) {
+            return false;
+        }
+        return Enhancement_S3Upload_FileHandler::deleteHandle($content);
+    }
+
+    public static function s3AttachmentHandle($content)
+    {
+        if (!self::loadS3Runtime()) {
+            return '';
+        }
+        return Enhancement_S3Upload_FileHandler::attachmentHandle($content);
+    }
+
+    public static function s3AttachmentDataHandle($content)
+    {
+        if (!self::loadS3Runtime()) {
+            return '';
+        }
+        return Enhancement_S3Upload_FileHandler::attachmentDataHandle($content);
+    }
+
     public static function aiSummaryEnabled(): bool
     {
         $settings = self::pluginSettings(Typecho_Widget::widget('Widget_Options'));
@@ -4328,17 +4390,29 @@ while ($tags->next()) {
             $requestedSlug = trim((string)$contents['slug']);
         }
 
+        $currentSlug = self::aiSlugReadCurrentSlug($cid);
+        $currentSlugIsDefault = self::aiSlugLooksDefault($currentSlug, $cid, $title);
+        $titleHashField = self::aiSlugHashFieldName();
+        $titleHash = self::aiSlugBuildTitleHash($title);
+        $lastTitleHash = self::aiSummaryReadFieldValue($cid, $titleHashField);
+
         $updateMode = isset($settings->ai_slug_update_mode) ? trim((string)$settings->ai_slug_update_mode) : 'empty';
-        if (!$force && $updateMode !== 'always') {
+        if (!$force) {
             if ($requestedSlug !== '') {
                 $result['message'] = 'slug already provided';
                 return $result;
             }
 
-            $currentSlug = self::aiSlugReadCurrentSlug($cid);
-            if ($currentSlug !== '') {
-                $result['message'] = 'slug exists';
-                return $result;
+            if ($updateMode !== 'always') {
+                if ($currentSlug !== '' && !$currentSlugIsDefault) {
+                    $result['message'] = 'slug exists';
+                    return $result;
+                }
+            } else {
+                if ($currentSlug !== '' && $titleHash !== '' && $lastTitleHash !== '' && hash_equals($lastTitleHash, $titleHash)) {
+                    $result['message'] = 'title unchanged';
+                    return $result;
+                }
             }
         }
 
@@ -4361,34 +4435,17 @@ while ($tags->next()) {
             return $result;
         }
 
-        $saved = false;
-        if (method_exists($edit, 'applySlug')) {
-            try {
-                $savedSlug = $edit->applySlug($slug, $cid, $title);
-                $saved = (trim((string)$savedSlug) !== '');
-            } catch (Exception $e) {
-                $saved = false;
-            }
-        }
-
-        if (!$saved) {
-            try {
-                $db = Typecho_Db::get();
-                $db->query(
-                    $db->update('table.contents')
-                        ->rows(array('slug' => $slug))
-                        ->where('cid = ?', $cid)
-                );
-                $saved = true;
-            } catch (Exception $e) {
-                $saved = false;
-            }
-        }
+        $savedSlug = self::aiSlugSaveWithUniqueness($cid, $slug, $title, $edit);
+        $saved = ($savedSlug !== '');
 
         if (!$saved) {
             $result['status'] = 'error';
             $result['message'] = 'save slug failed';
             return $result;
+        }
+
+        if ($titleHash !== '') {
+            self::aiSummarySaveFieldValue($cid, $titleHashField, $titleHash);
         }
 
         $result['status'] = 'generated';
@@ -4417,6 +4474,107 @@ while ($tags->next()) {
         } catch (Exception $e) {
             return '';
         }
+    }
+
+    private static function aiSlugLooksDefault(string $currentSlug, int $cid, string $title): bool
+    {
+        $currentSlug = trim($currentSlug);
+        if ($currentSlug === '') {
+            return true;
+        }
+
+        $plainSlug = ltrim($currentSlug, '@');
+        if ($plainSlug === (string)$cid) {
+            return true;
+        }
+
+        $titleBaseSlug = Typecho_Common::slugName(trim($title), (string)$cid, 128);
+        if ($titleBaseSlug !== '' && $plainSlug === $titleBaseSlug) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static function aiSlugSaveWithUniqueness(int $cid, string $slug, string $title, $edit): string
+    {
+        if ($cid <= 0) {
+            return '';
+        }
+
+        if (is_object($edit) && method_exists($edit, 'applySlug')) {
+            try {
+                $savedSlug = trim((string)$edit->applySlug($slug, $cid, $title));
+                if ($savedSlug !== '') {
+                    return $savedSlug;
+                }
+            } catch (Exception $e) {
+                // fallback to db unique write
+            }
+        }
+
+        try {
+            $db = Typecho_Db::get();
+            $baseSlug = Typecho_Common::slugName(trim($slug), (string)$cid, 128);
+            if ($baseSlug === '') {
+                return '';
+            }
+
+            $resultSlug = $baseSlug;
+            $row = $db->fetchRow(
+                $db->select('type', 'parent')
+                    ->from('table.contents')
+                    ->where('cid = ?', $cid)
+                    ->limit(1)
+            );
+
+            if (is_array($row) && isset($row['type']) && (string)$row['type'] === 'revision' && !empty($row['parent'])) {
+                $resultSlug = '@' . $resultSlug;
+            }
+
+            $count = 1;
+            while (
+                $db->fetchObject(
+                    $db->select(array('COUNT(cid)' => 'num'))
+                        ->from('table.contents')
+                        ->where('slug = ? AND cid <> ?', $resultSlug, $cid)
+                )->num > 0
+            ) {
+                $resultSlug = $baseSlug . '-' . $count;
+                $count++;
+            }
+
+            $db->query(
+                $db->update('table.contents')
+                    ->rows(array('slug' => $resultSlug))
+                    ->where('cid = ?', $cid)
+            );
+
+            return $resultSlug;
+        } catch (Exception $e) {
+            return '';
+        }
+    }
+
+    private static function aiSlugHashFieldName(): string
+    {
+        return '_enh_ai_slug_title_hash';
+    }
+
+    private static function aiSlugBuildTitleHash(string $title): string
+    {
+        $normalized = trim(preg_replace('/\s+/u', ' ', $title));
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (function_exists('mb_strtolower')) {
+            $normalized = mb_strtolower($normalized, 'UTF-8');
+        } else {
+            $normalized = strtolower($normalized);
+        }
+
+        return md5($normalized);
     }
 
     private static function aiSlugCallApi(string $title, $settings): array
@@ -4475,6 +4633,7 @@ while ($tags->next()) {
         );
 
         $ch = curl_init();
+        $sslVerify = self::aiSslVerifyEnabled($settings);
         $curlOptions = array(
             CURLOPT_URL => $endpoint,
             CURLOPT_POST => true,
@@ -4483,7 +4642,8 @@ while ($tags->next()) {
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 25,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
         );
 
         if (defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {
@@ -4707,6 +4867,14 @@ while ($tags->next()) {
         return $value;
     }
 
+    private static function aiSslVerifyEnabled($settings): bool
+    {
+        if (!isset($settings->ai_ssl_verify)) {
+            return true;
+        }
+        return trim((string)$settings->ai_ssl_verify) !== '0';
+    }
+
     private static function aiSummaryApiEndpoint(string $rawUrl): string
     {
         $url = trim($rawUrl);
@@ -4781,6 +4949,7 @@ while ($tags->next()) {
         );
 
         $ch = curl_init();
+        $sslVerify = self::aiSslVerifyEnabled($settings);
         $curlOptions = array(
             CURLOPT_URL => $endpoint,
             CURLOPT_POST => true,
@@ -4789,7 +4958,8 @@ while ($tags->next()) {
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 25,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
         );
 
         if (defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {

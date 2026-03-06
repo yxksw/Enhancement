@@ -50,38 +50,95 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 
     private static function pluginSettings($options = null)
     {
-        if ($options === null) {
-            $options = Typecho_Widget::widget('Widget_Options');
+        $settings = self::readPluginSettingsFromDatabase();
+        if (!empty($settings)) {
+            return self::buildPluginConfigObject(self::encodePluginConfigValue($settings));
         }
 
+        return self::buildPluginConfigObject(self::encodePluginConfigValue(array()));
+    }
+
+    public static function runtimeSettings()
+    {
+        return self::pluginSettings(Typecho_Widget::widget('Widget_Options'));
+    }
+
+    private static function readPluginSettingsFromDatabase()
+    {
         try {
-            $settings = $options->plugin('Enhancement');
-            if (is_object($settings)) {
-                return $settings;
+            $db = Typecho_Db::get();
+            $row = $db->fetchRow(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', 'plugin:Enhancement')
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+
+            if (is_array($row) && isset($row['value'])) {
+                return self::decodePluginConfigValue((string)$row['value']);
             }
         } catch (Exception $e) {
-            // 配置缺失时返回空配置，避免前台致命错误
+            // ignore db read errors
         }
 
-        return (object) array();
+        return array();
+    }
+
+    private static function decodePluginConfigValue($value)
+    {
+        $text = trim((string)$value);
+        if ($text === '') {
+            return array();
+        }
+
+        $jsonDecoded = json_decode($text, true);
+        if (is_array($jsonDecoded)) {
+            return $jsonDecoded;
+        }
+
+        $unserialized = @unserialize($text);
+        if (is_array($unserialized)) {
+            return $unserialized;
+        }
+
+        return array();
+    }
+
+    private static function encodePluginConfigValue($settings)
+    {
+        if (!is_array($settings)) {
+            $settings = array();
+        }
+
+        $serialized = @serialize($settings);
+        if (!is_string($serialized) || $serialized === '') {
+            $serialized = 'a:0:{}';
+        }
+
+        return $serialized;
     }
 
     private static function ensurePluginConfigOptionExists()
     {
         $pluginName = 'Enhancement';
         $globalOptionName = 'plugin:' . $pluginName;
-        $globalOptionValue = self::normalizeOptionRows($globalOptionName, true, '{}');
-        self::normalizeOptionRows('_plugin:' . $pluginName, false, '{}');
+        $defaultValue = self::encodePluginConfigValue(array());
+        $globalOptionValue = self::normalizeOptionRows($globalOptionName, true, $defaultValue);
+        self::normalizeOptionRows('_plugin:' . $pluginName, false, $defaultValue);
         self::syncOptionCache($globalOptionName, $globalOptionValue, $pluginName);
     }
 
-    private static function normalizeOptionRows($optionName, $ensureGlobalRow = false, $defaultValue = '{}')
+    private static function normalizeOptionRows($optionName, $ensureGlobalRow = false, $defaultValue = null)
     {
         $optionName = trim((string)$optionName);
         if ($optionName === '') {
-            return '{}';
+            return self::encodePluginConfigValue(array());
         }
 
+        if ($defaultValue === null || trim((string)$defaultValue) === '') {
+            $defaultValue = self::encodePluginConfigValue(array());
+        }
         $defaultValue = self::normalizePluginConfigValue($defaultValue);
         $globalValue = $defaultValue;
 
@@ -147,24 +204,8 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 
     private static function normalizePluginConfigValue($value)
     {
-        $text = trim((string)$value);
-        if ($text === '') {
-            return '{}';
-        }
-
-        $jsonDecoded = json_decode($text, true);
-        if (is_array($jsonDecoded)) {
-            $json = json_encode($jsonDecoded);
-            return ($json === false || $json === null) ? '{}' : $json;
-        }
-
-        $unserialized = @unserialize($text);
-        if (is_array($unserialized)) {
-            $json = json_encode($unserialized);
-            return ($json === false || $json === null) ? '{}' : $json;
-        }
-
-        return '{}';
+        $settings = self::decodePluginConfigValue($value);
+        return self::encodePluginConfigValue($settings);
     }
 
     private static function syncOptionCache($optionName, $optionValue, $pluginName = 'Enhancement')
@@ -241,10 +282,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 
     private static function buildPluginConfigObject($optionValue)
     {
-        $settings = json_decode((string)$optionValue, true);
-        if (!is_array($settings)) {
-            $settings = array();
-        }
+        $settings = self::decodePluginConfigValue($optionValue);
 
         if (class_exists('Typecho_Config')) {
             return new Typecho_Config($settings);
@@ -1571,18 +1609,12 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             return;
         }
 
-        $currentJson = self::normalizeOptionRows($optionName, true, '{}');
-        $current = json_decode((string)$currentJson, true);
-        if (!is_array($current)) {
-            $current = array();
-        }
+        $currentValue = self::normalizeOptionRows($optionName, true, self::encodePluginConfigValue(array()));
+        $current = self::decodePluginConfigValue($currentValue);
         $current = self::normalizeSettingsForStorage($current);
 
         $merged = array_merge($current, $incoming);
-        $json = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if ($json === false || $json === null) {
-            $json = '{}';
-        }
+        $storedValue = self::encodePluginConfigValue($merged);
 
         try {
             $db = Typecho_Db::get();
@@ -1597,7 +1629,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             if (is_array($row) && !empty($row)) {
                 $db->query(
                     $db->update('table.options')
-                        ->rows(array('value' => $json))
+                        ->rows(array('value' => $storedValue))
                         ->where('name = ?', $optionName)
                         ->where('user = ?', 0)
                 );
@@ -1606,7 +1638,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
                     $db->insert('table.options')->rows(array(
                         'name' => $optionName,
                         'user' => 0,
-                        'value' => $json
+                        'value' => $storedValue
                     ))
                 );
             }
@@ -1614,7 +1646,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             // ignore save errors
         }
 
-        self::syncOptionCache($optionName, $json, 'Enhancement');
+        self::syncOptionCache($optionName, $storedValue, 'Enhancement');
     }
 
     public static function enhancementInstall()

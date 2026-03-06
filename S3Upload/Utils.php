@@ -23,11 +23,19 @@ class Enhancement_S3Upload_Utils
         
         $logDir = __TYPECHO_ROOT_DIR__ . '/usr/logs';
         if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
+            @mkdir($logDir, 0755, true);
         }
-        
+
         $logFile = $logDir . '/enhancement-s3upload.log';
-        error_log($logMessage, 3, $logFile);
+        $written = false;
+
+        if (is_dir($logDir) && is_writable($logDir)) {
+            $written = @error_log($logMessage, 3, $logFile);
+        }
+
+        if (!$written) {
+            error_log('[Enhancement S3Upload] ' . trim($logMessage));
+        }
     }
 
     /**

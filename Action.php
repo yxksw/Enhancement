@@ -39,6 +39,37 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         return $normalized;
     }
 
+    private function decodeStoredPluginSettingsValue($rawValue)
+    {
+        $text = trim((string)$rawValue);
+        if ($text === '') {
+            return array();
+        }
+
+        $decoded = json_decode($text, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        $unserialized = @unserialize($text);
+        if (is_array($unserialized)) {
+            return $unserialized;
+        }
+
+        return array();
+    }
+
+    private function encodeStoredPluginSettingsValue(array $settings)
+    {
+        $settings = $this->normalizePluginSettings($settings);
+        $serialized = @serialize($settings);
+        if (!is_string($serialized) || $serialized === '') {
+            $serialized = 'a:0:{}';
+        }
+
+        return $serialized;
+    }
+
     private function collectPluginSettings()
     {
         $settings = array();
@@ -53,7 +84,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             );
 
             if (is_array($row) && isset($row['value'])) {
-                $decoded = json_decode((string)$row['value'], true);
+                $decoded = $this->decodeStoredPluginSettingsValue((string)$row['value']);
                 if (is_array($decoded)) {
                     $settings = $decoded;
                 }
@@ -63,14 +94,11 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         }
 
         if (empty($settings)) {
-            try {
-                $options = Typecho_Widget::widget('Widget_Options');
-                $plugin = $options->plugin('Enhancement');
+            if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+                $plugin = Enhancement_Plugin::runtimeSettings();
                 if (is_object($plugin) && method_exists($plugin, 'toArray')) {
                     $settings = $plugin->toArray();
                 }
-            } catch (Exception $e) {
-                // ignore options fallback errors
             }
         }
 
@@ -426,7 +454,9 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             $api->format(true);
 
             if ($server === 'netease') {
-                $settings = Typecho_Widget::widget('Widget_Options')->plugin('Enhancement');
+                $settings = class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')
+                    ? Enhancement_Plugin::runtimeSettings()
+                    : (object) array();
                 $cookie = isset($settings->music_netease_cookie) ? trim((string)$settings->music_netease_cookie) : '';
                 if ($cookie !== '') {
                     $api->cookie($cookie);
@@ -557,10 +587,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             throw new Typecho_Widget_Exception(_t('没有可保存的配置项'));
         }
 
-        $json = json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if ($json === false) {
-            throw new Typecho_Widget_Exception(_t('配置序列化失败'));
-        }
+        $storedValue = $this->encodeStoredPluginSettingsValue($settings);
 
         $row = $this->db->fetchRow(
             $this->db->select('name')
@@ -573,7 +600,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         if (is_array($row) && !empty($row)) {
             $this->db->query(
                 $this->db->update('table.options')
-                    ->rows(array('value' => $json))
+                    ->rows(array('value' => $storedValue))
                     ->where('name = ?', 'plugin:Enhancement')
                     ->where('user = ?', 0)
             );
@@ -581,7 +608,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             $this->db->query(
                 $this->db->insert('table.options')->rows(array(
                     'name' => 'plugin:Enhancement',
-                    'value' => $json,
+                    'value' => $storedValue,
                     'user' => 0
                 ))
             );

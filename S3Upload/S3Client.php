@@ -18,10 +18,13 @@ class Enhancement_S3Upload_S3Client
 
     private function __construct()
     {
-        $options = Typecho_Widget::widget('Widget_Options');
-        try {
-            $this->settings = $options->plugin('Enhancement');
-        } catch (Exception $e) {
+        $this->settings = null;
+
+        if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+            $this->settings = Enhancement_Plugin::runtimeSettings();
+        }
+
+        if (!is_object($this->settings)) {
             $this->settings = (object) array();
         }
 

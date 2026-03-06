@@ -223,15 +223,13 @@ class Enhancement_S3Upload_FileHandler
 
     private static function pluginSettings()
     {
-        try {
-            $options = Typecho_Widget::widget('Widget_Options');
-            $settings = $options->plugin('Enhancement');
+        if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+            $settings = Enhancement_Plugin::runtimeSettings();
             if (is_object($settings)) {
                 return $settings;
             }
-        } catch (Exception $e) {
-            // ignore and fallback
         }
+
         return (object) array();
     }
 

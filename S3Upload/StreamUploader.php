@@ -24,6 +24,19 @@ class Enhancement_S3Upload_StreamUploader
 
     public function handleUpload($file)
     {
+        if (
+            is_array($file)
+            && (!isset($file['size']) || intval($file['size']) <= 0)
+            && isset($file['tmp_name'])
+            && is_string($file['tmp_name'])
+            && is_file($file['tmp_name'])
+        ) {
+            $size = @filesize($file['tmp_name']);
+            if (is_numeric($size) && intval($size) > 0) {
+                $file['size'] = intval($size);
+            }
+        }
+
         if (!$this->validateFile($file)) {
             throw new Exception('文件验证失败');
         }
@@ -38,6 +51,9 @@ class Enhancement_S3Upload_StreamUploader
         $extension = $this->getFileExt(isset($file['name']) ? (string)$file['name'] : '');
         $mimeType = $this->getMimeType(isset($file['tmp_name']) ? (string)$file['tmp_name'] : '');
         $size = isset($file['size']) ? intval($file['size']) : 0;
+        if ($size <= 0 && isset($file['tmp_name']) && is_string($file['tmp_name']) && is_file($file['tmp_name'])) {
+            $size = intval(filesize($file['tmp_name']));
+        }
 
         return array(
             'name' => isset($file['name']) ? (string)$file['name'] : basename($path),
@@ -55,12 +71,19 @@ class Enhancement_S3Upload_StreamUploader
         if (!is_array($file) || empty($file['name'])) {
             return false;
         }
-        if (!isset($file['tmp_name']) || !is_string($file['tmp_name']) || !is_readable($file['tmp_name'])) {
+        if (!isset($file['tmp_name']) || !is_string($file['tmp_name']) || !is_file($file['tmp_name']) || !is_readable($file['tmp_name'])) {
             return false;
         }
-        if (!isset($file['size']) || intval($file['size']) <= 0) {
+        if (!isset($file['size']) || intval($file['size']) < 0) {
             return false;
         }
+        if (intval($file['size']) === 0) {
+            $size = @filesize($file['tmp_name']);
+            if (!is_numeric($size) || intval($size) <= 0) {
+                return false;
+            }
+        }
+
         return true;
     }
 

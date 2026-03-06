@@ -14,6 +14,9 @@ class Enhancement_S3Upload_FileHandler
         }
 
         if (!self::shouldUseS3()) {
+            if (class_exists('Enhancement_Plugin') && Enhancement_Plugin::s3UploadEnabled()) {
+                Enhancement_S3Upload_Utils::log('S3 上传未生效：配置不完整或服务器环境不满足，已回退本地上传', 'warning');
+            }
             return self::localUploadHandle($file);
         }
 
@@ -23,6 +26,7 @@ class Enhancement_S3Upload_FileHandler
             $file['name'] = $name;
 
             if (!self::checkFileType($ext)) {
+                Enhancement_S3Upload_Utils::log('文件类型不允许上传：' . $ext, 'warning');
                 return false;
             }
 
@@ -72,6 +76,7 @@ class Enhancement_S3Upload_FileHandler
             }
 
             if (!$result || !is_array($result)) {
+                Enhancement_S3Upload_Utils::log('S3 上传返回结果异常', 'error');
                 return false;
             }
 

@@ -18,9 +18,9 @@
         use Widget\Plugins\Edit;
         use Widget\{Options, Notice};
 
-        try {
-            $plugin = Options::alloc()->plugin('Enhancement');
-        } catch (Exception $e) {
+        if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+            $plugin = Enhancement_Plugin::runtimeSettings();
+        } else {
             $plugin = (object) array();
         }
         $template = isset($plugin->template) ? $plugin->template : 'default';

@@ -16,9 +16,9 @@ $request = $options->request;
 $response = $options->response;
 
 $settings = null;
-try {
-    $settings = $options->plugin('Enhancement');
-} catch (Exception $e) {
+if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+    $settings = Enhancement_Plugin::runtimeSettings();
+} else {
     $settings = (object) array();
 }
 

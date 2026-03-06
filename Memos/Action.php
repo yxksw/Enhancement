@@ -9,9 +9,9 @@ class Enhancement_Memos_Action extends Typecho_Widget implements Widget_Interfac
 
     private function configuredToken(): string
     {
-        try {
-            $settings = $this->options->plugin('Enhancement');
-        } catch (Exception $e) {
+        if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+            $settings = Enhancement_Plugin::runtimeSettings();
+        } else {
             $settings = (object) array();
         }
 

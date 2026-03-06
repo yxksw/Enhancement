@@ -87,8 +87,16 @@ class Enhancement_S3Upload_S3Client
     private function buildObjectKey($path)
     {
         $path = ltrim(trim((string)$path), '/');
-        $prefix = trim((string)(isset($this->settings->s3_custom_path) ? $this->settings->s3_custom_path : ''));
-        $prefix = trim($prefix, '/');
+        $prefix = $this->getNormalizedCustomPath();
+
+        // 兼容历史数据：path 已包含前缀时避免重复拼接
+        if ($prefix !== '' && $path !== '') {
+            if ($path === $prefix) {
+                $path = '';
+            } elseif (strpos($path, $prefix . '/') === 0) {
+                $path = substr($path, strlen($prefix) + 1);
+            }
+        }
 
         if ($path === '') {
             return $prefix;
@@ -98,6 +106,13 @@ class Enhancement_S3Upload_S3Client
         }
 
         return $prefix . '/' . $path;
+    }
+
+    private function getNormalizedCustomPath()
+    {
+        $prefix = trim((string)(isset($this->settings->s3_custom_path) ? $this->settings->s3_custom_path : ''));
+        $prefix = trim($prefix, '/');
+        return $prefix;
     }
 
     private function encodePath($path)

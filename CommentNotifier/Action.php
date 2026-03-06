@@ -16,10 +16,13 @@ class Enhancement_CommentNotifier_Action extends Typecho_Widget implements Widge
 
     public function action($data = "")
     {
-        $options = Options::alloc();
-        try {
-            $plugin = $options->plugin('Enhancement');
-        } catch (Exception $e) {
+        if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+            $plugin = Enhancement_Plugin::runtimeSettings();
+        } else {
+            $plugin = (object) array();
+        }
+
+        if (!is_object($plugin)) {
             echo '插件配置缺失';
             return;
         }

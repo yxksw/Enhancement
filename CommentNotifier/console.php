@@ -14,9 +14,9 @@ $request = $options->request;
 $response = $options->response;
 $current = $request->get('act', 'index');
 $theme = $request->get('file', 'owner.html');
-try {
-    $plugin = Options::alloc()->plugin('Enhancement');
-} catch (Exception $e) {
+if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
+    $plugin = Enhancement_Plugin::runtimeSettings();
+} else {
     $plugin = (object) array();
 }
 

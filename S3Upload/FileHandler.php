@@ -490,6 +490,14 @@ class Enhancement_S3Upload_FileHandler
             return false;
         }
 
+        // 与 Typecho 后台「允许上传文件类型」设置保持一致
+        if (class_exists('Widget_Upload') && method_exists('Widget_Upload', 'checkFileType')) {
+            return Widget_Upload::checkFileType($ext);
+        }
+        if (class_exists('Widget\\Upload') && method_exists('Widget\\Upload', 'checkFileType')) {
+            return \Widget\Upload::checkFileType($ext);
+        }
+
         $options = Typecho_Widget::widget('Widget_Options');
         $allowed = isset($options->allowedAttachmentTypes) ? $options->allowedAttachmentTypes : array();
         if (is_string($allowed)) {

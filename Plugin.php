@@ -66,6 +66,88 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         return (object) array();
     }
 
+    private static function ensurePluginConfigOptionExists()
+    {
+        $pluginName = 'Enhancement';
+        $optionName = 'plugin:' . $pluginName;
+        $optionValue = '{}';
+
+        try {
+            $options = Typecho_Widget::widget('Widget_Options');
+            $settings = $options->plugin($pluginName);
+            if (is_object($settings)) {
+                return;
+            }
+        } catch (Exception $e) {
+            // 配置缺失时继续自动补齐
+        }
+
+        try {
+            $db = Typecho_Db::get();
+            $row = $db->fetchRow(
+                $db->select('value')
+                    ->from('table.options')
+                    ->where('name = ?', $optionName)
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+
+            if (empty($row)) {
+                $db->query(
+                    $db->insert('table.options')->rows(array(
+                        'name' => $optionName,
+                        'user' => 0,
+                        'value' => $optionValue
+                    ))
+                );
+            } else {
+                $currentValue = isset($row['value']) ? trim((string)$row['value']) : '';
+                if ($currentValue !== '') {
+                    $optionValue = $currentValue;
+                } else {
+                    $db->query(
+                        $db->update('table.options')
+                            ->rows(array('value' => $optionValue))
+                            ->where('name = ?', $optionName)
+                            ->where('user = ?', 0)
+                    );
+                }
+            }
+        } catch (Exception $e) {
+            return;
+        }
+
+        self::syncOptionCache($optionName, $optionValue);
+    }
+
+    private static function syncOptionCache($optionName, $optionValue)
+    {
+        try {
+            $options = Typecho_Widget::widget('Widget_Options');
+            $reflector = new ReflectionObject($options);
+
+            while ($reflector) {
+                if ($reflector->hasProperty('row')) {
+                    $property = $reflector->getProperty('row');
+                    $property->setAccessible(true);
+
+                    $rows = $property->getValue($options);
+                    if (!is_array($rows)) {
+                        $rows = array();
+                    }
+
+                    $rows[(string)$optionName] = (string)$optionValue;
+                    $property->setValue($options, $rows);
+                    break;
+                }
+
+                $reflector = $reflector->getParentClass();
+            }
+        } catch (Exception $e) {
+            // 忽略缓存同步异常
+        }
+    }
+
     public static function getPluginVersion(): string
     {
         static $version = null;
@@ -316,6 +398,8 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
      */
     public static function config(Typecho_Widget_Helper_Form $form)
     {
+        self::ensurePluginConfigOptionExists();
+
         echo '<style type="text/css">
     table {
         background: #FFF;

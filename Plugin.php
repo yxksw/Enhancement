@@ -84,15 +84,13 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 
         try {
             $db = Typecho_Db::get();
-            $row = $db->fetchRow(
-                $db->select('value')
+            $rows = $db->fetchAll(
+                $db->select('user', 'value')
                     ->from('table.options')
                     ->where('name = ?', $optionName)
-                    ->where('user = ?', 0)
-                    ->limit(1)
             );
 
-            if (empty($row)) {
+            if (empty($rows)) {
                 $db->query(
                     $db->insert('table.options')->rows(array(
                         'name' => $optionName,
@@ -101,15 +99,35 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
                     ))
                 );
             } else {
-                $currentValue = isset($row['value']) ? trim((string)$row['value']) : '';
-                if ($currentValue !== '') {
-                    $optionValue = $currentValue;
-                } else {
+                $hasGlobalOption = false;
+
+                foreach ($rows as $row) {
+                    $userId = isset($row['user']) ? intval($row['user']) : 0;
+                    $currentValue = isset($row['value']) ? (string)$row['value'] : '';
+                    $normalizedValue = self::normalizePluginConfigValue($currentValue);
+
+                    if ($currentValue !== $normalizedValue) {
+                        $db->query(
+                            $db->update('table.options')
+                                ->rows(array('value' => $normalizedValue))
+                                ->where('name = ?', $optionName)
+                                ->where('user = ?', $userId)
+                        );
+                    }
+
+                    if ($userId === 0) {
+                        $hasGlobalOption = true;
+                        $optionValue = $normalizedValue;
+                    }
+                }
+
+                if (!$hasGlobalOption) {
                     $db->query(
-                        $db->update('table.options')
-                            ->rows(array('value' => $optionValue))
-                            ->where('name = ?', $optionName)
-                            ->where('user = ?', 0)
+                        $db->insert('table.options')->rows(array(
+                            'name' => $optionName,
+                            'user' => 0,
+                            'value' => $optionValue
+                        ))
                     );
                 }
             }
@@ -118,6 +136,28 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         }
 
         self::syncOptionCache($optionName, $optionValue);
+    }
+
+    private static function normalizePluginConfigValue($value)
+    {
+        $text = trim((string)$value);
+        if ($text === '') {
+            return '{}';
+        }
+
+        $jsonDecoded = json_decode($text, true);
+        if (is_array($jsonDecoded)) {
+            $json = json_encode($jsonDecoded);
+            return ($json === false || $json === null) ? '{}' : $json;
+        }
+
+        $unserialized = @unserialize($text);
+        if (is_array($unserialized)) {
+            $json = json_encode($unserialized);
+            return ($json === false || $json === null) ? '{}' : $json;
+        }
+
+        return '{}';
     }
 
     private static function syncOptionCache($optionName, $optionValue)

@@ -132,10 +132,10 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
                 }
             }
         } catch (Exception $e) {
-            return;
+            // 数据库不可写或查询异常时，继续尝试修正当前请求缓存
         }
 
-        self::syncOptionCache($optionName, $optionValue);
+        self::syncOptionCache($optionName, $optionValue, $pluginName);
     }
 
     private static function normalizePluginConfigValue($value)
@@ -160,32 +160,94 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         return '{}';
     }
 
-    private static function syncOptionCache($optionName, $optionValue)
+    private static function syncOptionCache($optionName, $optionValue, $pluginName = 'Enhancement')
     {
         try {
             $options = Typecho_Widget::widget('Widget_Options');
-            $reflector = new ReflectionObject($options);
+            self::patchOptionsWidgetCache($options, $optionName, $optionValue, $pluginName);
+
+            $widgetClass = class_exists('Typecho_Widget', false) ? 'Typecho_Widget' : 'Typecho\\Widget';
+            $reflector = new ReflectionClass($widgetClass);
+            if ($reflector->hasProperty('widgetPool')) {
+                $poolProperty = $reflector->getProperty('widgetPool');
+                $poolProperty->setAccessible(true);
+                $pool = $poolProperty->getValue();
+                if (is_array($pool)) {
+                    foreach ($pool as $widget) {
+                        self::patchOptionsWidgetCache($widget, $optionName, $optionValue, $pluginName);
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // 忽略缓存同步异常
+        }
+    }
+
+    private static function patchOptionsWidgetCache($widget, $optionName, $optionValue, $pluginName = 'Enhancement')
+    {
+        if (!is_object($widget) || !is_a($widget, 'Widget\\Options')) {
+            return;
+        }
+
+        try {
+            $reflector = new ReflectionObject($widget);
 
             while ($reflector) {
                 if ($reflector->hasProperty('row')) {
-                    $property = $reflector->getProperty('row');
-                    $property->setAccessible(true);
+                    $rowProperty = $reflector->getProperty('row');
+                    $rowProperty->setAccessible(true);
 
-                    $rows = $property->getValue($options);
+                    $rows = $rowProperty->getValue($widget);
                     if (!is_array($rows)) {
                         $rows = array();
                     }
 
                     $rows[(string)$optionName] = (string)$optionValue;
-                    $property->setValue($options, $rows);
+                    $rowProperty->setValue($widget, $rows);
                     break;
                 }
 
                 $reflector = $reflector->getParentClass();
             }
         } catch (Exception $e) {
-            // 忽略缓存同步异常
+            // ignore
         }
+
+        try {
+            $reflector = new ReflectionObject($widget);
+            if ($reflector->hasProperty('pluginConfig')) {
+                $pluginConfigProperty = $reflector->getProperty('pluginConfig');
+                $pluginConfigProperty->setAccessible(true);
+
+                $pluginConfigs = $pluginConfigProperty->getValue($widget);
+                if (!is_array($pluginConfigs)) {
+                    $pluginConfigs = array();
+                }
+
+                $pluginConfigs[(string)$pluginName] = self::buildPluginConfigObject($optionValue);
+                $pluginConfigProperty->setValue($widget, $pluginConfigs);
+            }
+        } catch (Exception $e) {
+            // ignore
+        }
+    }
+
+    private static function buildPluginConfigObject($optionValue)
+    {
+        $settings = json_decode((string)$optionValue, true);
+        if (!is_array($settings)) {
+            $settings = array();
+        }
+
+        if (class_exists('Typecho_Config')) {
+            return new Typecho_Config($settings);
+        }
+
+        if (class_exists('Typecho\\Config')) {
+            return new \Typecho\Config($settings);
+        }
+
+        return (object)$settings;
     }
 
     public static function getPluginVersion(): string

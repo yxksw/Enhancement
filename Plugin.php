@@ -3884,6 +3884,13 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 
         $translateUrl = Helper::security()->getIndex('/action/enhancement-edit?do=ai-slug-translate');
 ?>
+<style>
+.enh-ai-slug-icon-btn{margin-left:8px !important;width:28px;height:28px;min-width:28px;padding:0 !important;display:inline-flex !important;align-items:center;justify-content:center;vertical-align:middle;line-height:1;border-radius:4px;}
+.enh-ai-slug-icon-btn .enh-ai-slug-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;color:inherit;}
+.enh-ai-slug-icon-btn .enh-ai-slug-icon svg{display:block;width:14px;height:14px;}
+.enh-ai-slug-icon-btn.is-loading .enh-ai-slug-icon{animation:enh-ai-slug-spin .8s linear infinite;}
+@keyframes enh-ai-slug-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+</style>
 <script>
 (function ($) {
     $(function () {
@@ -3901,6 +3908,8 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         var $status = $('#enh-ai-slug-status');
         var $button = $('#enh-ai-slug-generate');
         var $slugRow = $slug.closest('p.url-slug');
+        var buttonIcon = '<span class="enh-ai-slug-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.9L19 10l-5.1 2.1L12 17l-1.9-4.9L5 10l5.1-2.1L12 3z"></path><path d="M19 3v4"></path><path d="M21 5h-4"></path></svg></span>';
+        var loadingIcon = '<span class="enh-ai-slug-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"></path></svg></span>';
 
         if (!$status.length) {
             $status = $('<p id="enh-ai-slug-status" style="margin:4px 0 0;color:#888;font-size:12px;line-height:1.5;"></p>');
@@ -3912,18 +3921,32 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         }
 
         if (!$button.length) {
-            $button = $('<button type="button" id="enh-ai-slug-generate" class="btn" style="margin-left:8px;padding:2px 10px;height:28px;line-height:24px;vertical-align:middle;">AI 生成 slug</button>');
+            $button = $('<button type="button" id="enh-ai-slug-generate" class="btn enh-ai-slug-icon-btn" title="AI 生成 slug" aria-label="AI 生成 slug">' + buttonIcon + '</button>');
             if ($slugRow.length) {
                 $slugRow.append($button);
             } else {
                 $status.before($button);
             }
+        } else {
+            $button.addClass('enh-ai-slug-icon-btn');
         }
 
         function setStatus(text, color) {
             $status.text(text || '');
             $status.css('color', color || '#888');
         }
+
+        function setButtonLoading(loading) {
+            loading = !!loading;
+            $button
+                .prop('disabled', loading)
+                .toggleClass('is-loading', loading)
+                .attr('title', loading ? '正在生成 slug' : 'AI 生成 slug')
+                .attr('aria-label', loading ? '正在生成 slug' : 'AI 生成 slug')
+                .html(loading ? loadingIcon : buttonIcon);
+        }
+
+        setButtonLoading(false);
 
         function requestTranslate(trigger, force) {
             var slugValue = $.trim($slug.val() || '');
@@ -3947,7 +3970,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             if (!force) {
                 lastRequestKey = requestKey;
             }
-            $button.prop('disabled', true).text('生成中...');
+            setButtonLoading(true);
             setStatus(force ? '正在重新生成 slug…' : '正在生成 slug…', '#576a7a');
 
             $.ajax({
@@ -3978,7 +4001,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
                 lastRequestKey = '';
             }).always(function () {
                 translating = false;
-                $button.prop('disabled', false).text('AI 生成 slug');
+                setButtonLoading(false);
             });
         }
 
@@ -4049,13 +4072,14 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 .enh-shortcodes-modal-btn{border:1px solid #d1d5db;border-radius:4px;background:#fff;color:#374151;padding:5px 12px;cursor:pointer;}
 .enh-shortcodes-modal-btn.primary{background:#467B96;border-color:#467B96;color:#fff;}
 .enh-shortcodes-modal-btn:hover{opacity:.92;}
-@media (max-width: 575px){
-    #wmd-button-row{height:auto;min-height:20px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;}
+@media (max-width: 1200px){
+    #wmd-button-bar{display:block;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:4px;}
+    #wmd-button-row{height:auto;min-height:20px;display:flex;flex-wrap:nowrap;align-items:center;width:max-content;min-width:100%;}
     #wmd-button-row .wmd-button,
-    #wmd-button-row .wmd-spacer{float:none;}
+    #wmd-button-row .wmd-spacer{float:none;flex:0 0 auto;}
     #wmd-button-row .enh-wmd-shortcode-spacer{display:none;}
-    #enh-wmd-shortcode-group{display:flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;margin-left:2px;}
-    #wmd-button-row .enh-wmd-shortcode-btn{width:24px;height:24px;margin:0;display:flex;align-items:center;justify-content:center;}
+    #enh-wmd-shortcode-group{display:inline-flex;flex-wrap:nowrap;align-items:center;gap:4px;margin-left:2px;flex:0 0 auto;}
+    #wmd-button-row .enh-wmd-shortcode-btn{width:24px;height:24px;margin:0;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
     #wmd-button-row .enh-wmd-shortcode-btn .enh-wmd-icon svg{width:15px;height:15px;}
 }
 </style>

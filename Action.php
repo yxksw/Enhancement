@@ -2437,6 +2437,35 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         $this->response->redirect($redirect);
     }
 
+    public function previewAiSlug()
+    {
+        $title = trim((string)$this->request->get('title'));
+        $cid = intval($this->request->get('cid'));
+
+        if ($title === '') {
+            $this->response->throwJson(array(
+                'success' => false,
+                'message' => _t('标题不能为空')
+            ));
+            return;
+        }
+
+        $result = Enhancement_Plugin::previewAiSlug($title, $cid);
+        if (!is_array($result)) {
+            $result = array(
+                'success' => false,
+                'slug' => '',
+                'message' => _t('Slug 生成失败')
+            );
+        }
+
+        $this->response->throwJson(array(
+            'success' => !empty($result['success']),
+            'slug' => isset($result['slug']) ? (string)$result['slug'] : '',
+            'message' => isset($result['message']) ? (string)$result['message'] : ''
+        ));
+    }
+
     public function goRedirect()
     {
         $target = $this->request->get('target');
@@ -2596,6 +2625,14 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             $user = Typecho_Widget::widget('Widget_User');
             $user->pass('administrator');
             $this->batchGenerateAiSummary();
+            return;
+        }
+
+        if ($this->request->is('do=ai-slug-translate')) {
+            Helper::security()->protect();
+            $user = Typecho_Widget::widget('Widget_User');
+            $user->pass('administrator');
+            $this->previewAiSlug();
             return;
         }
 

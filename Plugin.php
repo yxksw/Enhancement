@@ -1091,8 +1091,8 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             'enable_ai_slug_translate',
             array('1' => _t('启用'), '0' => _t('禁用')),
             '0',
-            _t('<h3 class="enhancement-title">AI Slug 设置</h3>保存文章时自动翻译 Slug'),
-            _t('发布/保存文章时调用 AI 生成英文 slug 并写入数据库')
+            _t('<h3 class="enhancement-title">AI Slug 设置</h3>清空 Slug 后自动翻译'),
+            _t('在编辑页将 slug 输入框清空后，失焦时调用 AI 生成英文 slug 并自动回填')
         );
         $form->addInput($enableAiSlugTranslate);
 
@@ -3865,6 +3865,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         }
         self::shortcodesHelper();
         self::tagsList();
+        self::aiSlugEditorHelper();
     }
 
     public static function writePageBottom()
@@ -3873,6 +3874,120 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             Enhancement_AttachmentHelper::addEnhancedFeatures();
         }
         self::shortcodesHelper();
+        self::aiSlugEditorHelper();
+    }
+
+    public static function aiSlugEditorHelper()
+    {
+        if (!self::aiSlugTranslateEnabled()) {
+            return;
+        }
+
+        $translateUrl = Helper::security()->getIndex('/action/enhancement-edit?do=ai-slug-translate');
+?>
+<script>
+(function ($) {
+    $(function () {
+        var $slug = $('#slug');
+        var $title = $('#title');
+        if (!$slug.length || !$title.length) {
+            return;
+        }
+
+        var actionUrl = <?php echo json_encode($translateUrl, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+        var $cid = $('input[name="cid"]');
+        var requestTimer = null;
+        var translating = false;
+        var lastRequestKey = '';
+        var $status = $('#enh-ai-slug-status');
+
+        if (!$status.length) {
+            $status = $('<p id="enh-ai-slug-status" style="margin-top:4px;color:#888;font-size:12px;line-height:1.5;"></p>');
+            $slug.closest('.typecho-option, li, .col-mb-12, .col-tb-8, td').append($status);
+        }
+
+        function setStatus(text, color) {
+            $status.text(text || '');
+            $status.css('color', color || '#888');
+        }
+
+        function scheduleTranslate() {
+            var slugValue = $.trim($slug.val() || '');
+            var titleValue = $.trim($title.val() || '');
+            if (slugValue !== '') {
+                setStatus('');
+                return;
+            }
+            if (titleValue === '') {
+                setStatus('标题为空，无法生成 slug', '#d9822b');
+                return;
+            }
+
+            if (requestTimer) {
+                window.clearTimeout(requestTimer);
+            }
+
+            requestTimer = window.setTimeout(function () {
+                var cidValue = $.trim(($cid.val() || ''));
+                var requestKey = titleValue + '|' + cidValue;
+                if (translating || requestKey === lastRequestKey) {
+                    return;
+                }
+
+                translating = true;
+                lastRequestKey = requestKey;
+                setStatus('正在生成 slug…', '#576a7a');
+
+                $.ajax({
+                    url: actionUrl,
+                    method: 'POST',
+                    dataType: 'json',
+                    data: {
+                        title: titleValue,
+                        cid: cidValue,
+                        trigger: 'clear'
+                    }
+                }).done(function (response) {
+                    if (response && response.success && response.slug) {
+                        $slug.val(response.slug).trigger('change');
+                        setStatus('已自动生成 slug', '#2d8a34');
+                        return;
+                    }
+
+                    var message = response && response.message ? response.message : '生成 slug 失败';
+                    setStatus(message, '#c23030');
+                    lastRequestKey = '';
+                }).fail(function (xhr) {
+                    var message = '生成 slug 失败';
+                    if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                    setStatus(message, '#c23030');
+                    lastRequestKey = '';
+                }).always(function () {
+                    translating = false;
+                });
+            }, 250);
+        }
+
+        $slug.on('blur change', function () {
+            if ($.trim($slug.val() || '') === '') {
+                scheduleTranslate();
+            } else {
+                setStatus('');
+            }
+        });
+
+        $title.on('change', function () {
+            if ($.trim($slug.val() || '') === '') {
+                lastRequestKey = '';
+                scheduleTranslate();
+            }
+        });
+    });
+})(window.jQuery);
+</script>
+<?php
     }
 
     public static function shortcodesHelper()
@@ -4587,12 +4702,57 @@ while ($tags->next()) {
     public static function handlePostFinishPublish($contents, $edit)
     {
         self::autoGeneratePostSummary($contents, $edit);
-        self::autoTranslatePostSlug($contents, $edit);
     }
 
     public static function handlePostFinishSave($contents, $edit)
     {
-        self::autoTranslatePostSlug($contents, $edit);
+    }
+
+    public static function previewAiSlug(string $title, int $cid = 0): array
+    {
+        $result = array(
+            'success' => false,
+            'slug' => '',
+            'message' => ''
+        );
+
+        if (!self::aiSlugTranslateEnabled()) {
+            $result['message'] = 'AI slug 翻译未启用';
+            return $result;
+        }
+
+        $title = trim($title);
+        if ($title === '') {
+            $result['message'] = '标题不能为空';
+            return $result;
+        }
+
+        $settings = self::pluginSettings(Typecho_Widget::widget('Widget_Options'));
+        $apiResult = self::aiSlugCallApi($title, $settings);
+        if (empty($apiResult['success'])) {
+            $result['message'] = isset($apiResult['error']) && trim((string)$apiResult['error']) !== ''
+                ? trim((string)$apiResult['error'])
+                : 'AI slug 生成失败';
+            return $result;
+        }
+
+        $slugRaw = isset($apiResult['slug']) ? (string)$apiResult['slug'] : '';
+        $slug = self::aiSlugNormalizeResult($slugRaw, $settings);
+        if ($slug === '') {
+            $result['message'] = 'AI 未返回有效 slug';
+            return $result;
+        }
+
+        $slug = self::aiSlugBuildUniqueCandidate($cid, $slug);
+        if ($slug === '') {
+            $result['message'] = 'slug 去重失败';
+            return $result;
+        }
+
+        $result['success'] = true;
+        $result['slug'] = $slug;
+        $result['message'] = 'ok';
+        return $result;
     }
 
     public static function autoGeneratePostSummary($contents, $edit, $force = false)
@@ -5420,6 +5580,52 @@ while ($tags->next()) {
         }
 
         return '';
+    }
+
+    private static function aiSlugBuildUniqueCandidate(int $cid, string $slug): string
+    {
+        $slug = trim($slug);
+        if ($slug === '') {
+            return '';
+        }
+
+        try {
+            $db = Typecho_Db::get();
+            $baseSlug = Typecho_Common::slugName(trim($slug), $cid > 0 ? (string)$cid : '', 128);
+            $baseSlug = strtolower(trim((string)$baseSlug, '-_'));
+            if ($baseSlug === '') {
+                return '';
+            }
+
+            $resultSlug = $baseSlug;
+            $count = 1;
+            while (true) {
+                if ($cid > 0) {
+                    $exists = $db->fetchObject(
+                        $db->select(array('COUNT(cid)' => 'num'))
+                            ->from('table.contents')
+                            ->where('slug = ? AND cid <> ?', $resultSlug, $cid)
+                    );
+                } else {
+                    $exists = $db->fetchObject(
+                        $db->select(array('COUNT(cid)' => 'num'))
+                            ->from('table.contents')
+                            ->where('slug = ?', $resultSlug)
+                    );
+                }
+
+                if (!isset($exists->num) || intval($exists->num) <= 0) {
+                    break;
+                }
+
+                $resultSlug = $baseSlug . '-' . $count;
+                $count++;
+            }
+
+            return $resultSlug;
+        } catch (Exception $e) {
+            return $slug;
+        }
     }
 
     private static function aiSummaryNormalizeResult(string $summary, $settings): string

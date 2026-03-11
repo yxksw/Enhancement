@@ -3900,15 +3900,24 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         var lastRequestKey = '';
         var $status = $('#enh-ai-slug-status');
         var $button = $('#enh-ai-slug-generate');
+        var $slugRow = $slug.closest('p.url-slug');
 
         if (!$status.length) {
-            $status = $('<p id="enh-ai-slug-status" style="margin-top:4px;color:#888;font-size:12px;line-height:1.5;"></p>');
-            $slug.closest('.typecho-option, li, .col-mb-12, .col-tb-8, td').append($status);
+            $status = $('<p id="enh-ai-slug-status" style="margin:4px 0 0;color:#888;font-size:12px;line-height:1.5;"></p>');
+            if ($slugRow.length) {
+                $slugRow.after($status);
+            } else {
+                $slug.after($status);
+            }
         }
 
         if (!$button.length) {
-            $button = $('<button type="button" id="enh-ai-slug-generate" class="btn" style="margin-top:6px;">AI 生成 slug</button>');
-            $status.before($button);
+            $button = $('<button type="button" id="enh-ai-slug-generate" class="btn" style="margin-left:8px;padding:2px 10px;height:28px;line-height:24px;vertical-align:middle;">AI 生成 slug</button>');
+            if ($slugRow.length) {
+                $slugRow.append($button);
+            } else {
+                $status.before($button);
+            }
         }
 
         function setStatus(text, color) {
@@ -4021,6 +4030,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 #wmd-button-row .enh-wmd-shortcode-btn .enh-wmd-icon svg{display:block;width:14px;height:14px;}
 #wmd-button-row .enh-wmd-shortcode-btn:hover .enh-wmd-icon{color:#374151;}
 #wmd-button-row .enh-wmd-shortcode-spacer{float:left;width:1px;height:18px;margin:1px 6px 0 4px;background:#d1d5db;}
+#enh-wmd-shortcode-group{display:inline-flex;align-items:center;vertical-align:top;}
 .enh-shortcodes-modal-mask{display:none;position:fixed;inset:0;z-index:999999;background:rgba(15,23,42,.42);}
 .enh-shortcodes-modal{position:absolute;top:14vh;left:50%;transform:translateX(-50%);width:min(640px,92vw);background:#fff;border-radius:8px;box-shadow:0 12px 30px rgba(15,23,42,.22);border:1px solid #e5e7eb;padding:14px;}
 .enh-shortcodes-modal-close{position:absolute;top:10px;right:10px;width:26px;height:26px;border:0;border-radius:6px;background:transparent;color:#6b7280;font-size:18px;line-height:26px;text-align:center;cursor:pointer;}
@@ -4039,6 +4049,15 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 .enh-shortcodes-modal-btn{border:1px solid #d1d5db;border-radius:4px;background:#fff;color:#374151;padding:5px 12px;cursor:pointer;}
 .enh-shortcodes-modal-btn.primary{background:#467B96;border-color:#467B96;color:#fff;}
 .enh-shortcodes-modal-btn:hover{opacity:.92;}
+@media (max-width: 575px){
+    #wmd-button-row{height:auto;min-height:20px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;}
+    #wmd-button-row .wmd-button,
+    #wmd-button-row .wmd-spacer{float:none;}
+    #wmd-button-row .enh-wmd-shortcode-spacer{display:none;}
+    #enh-wmd-shortcode-group{display:flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;margin-left:2px;}
+    #wmd-button-row .enh-wmd-shortcode-btn{width:24px;height:24px;margin:0;display:flex;align-items:center;justify-content:center;}
+    #wmd-button-row .enh-wmd-shortcode-btn .enh-wmd-icon svg{width:15px;height:15px;}
+}
 </style>
 <script>
 (function ($) {

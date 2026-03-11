@@ -4749,15 +4749,22 @@ while ($tags->next()) {
         if (is_array($contents) && isset($contents['slug'])) {
             $requestedSlug = trim((string)$contents['slug']);
         }
+        $clearSlugRequested = is_array($contents)
+            && array_key_exists('slug', $contents)
+            && trim((string)$contents['slug']) === '';
 
         $currentSlug = self::aiSlugReadCurrentSlug($cid);
         $currentSlugIsDefault = self::aiSlugLooksDefault($currentSlug, $cid, $title);
         $titleHashField = self::aiSlugHashFieldName();
+        $slugValueField = self::aiSlugValueFieldName();
         $titleHash = self::aiSlugBuildTitleHash($title);
         $lastTitleHash = self::aiSummaryReadFieldValue($cid, $titleHashField);
+        $lastAiSlug = self::aiSummaryReadFieldValue($cid, $slugValueField);
+        $currentSlugMatchesLastAi = ($currentSlug !== '' && $lastAiSlug !== '' && trim((string)$currentSlug) === trim((string)$lastAiSlug));
+        $titleChangedSinceLastAi = ($titleHash !== '' && $lastTitleHash !== '' && !hash_equals($lastTitleHash, $titleHash));
 
         $updateMode = isset($settings->ai_slug_update_mode) ? trim((string)$settings->ai_slug_update_mode) : 'empty';
-        if (!$force) {
+        if (!$force && !$clearSlugRequested) {
             if ($requestedSlug !== '') {
                 $result['message'] = 'slug already provided';
                 return $result;
@@ -4765,8 +4772,10 @@ while ($tags->next()) {
 
             if ($updateMode !== 'always') {
                 if ($currentSlug !== '' && !$currentSlugIsDefault) {
-                    $result['message'] = 'slug exists';
-                    return $result;
+                    if (!$currentSlugMatchesLastAi || !$titleChangedSinceLastAi) {
+                        $result['message'] = 'slug exists';
+                        return $result;
+                    }
                 }
             } else {
                 if ($currentSlug !== '' && $titleHash !== '' && $lastTitleHash !== '' && hash_equals($lastTitleHash, $titleHash)) {
@@ -4807,6 +4816,7 @@ while ($tags->next()) {
         if ($titleHash !== '') {
             self::aiSummarySaveFieldValue($cid, $titleHashField, $titleHash);
         }
+        self::aiSummarySaveFieldValue($cid, $slugValueField, $savedSlug);
 
         $result['status'] = 'generated';
         $result['message'] = 'ok';
@@ -4919,6 +4929,11 @@ while ($tags->next()) {
     private static function aiSlugHashFieldName(): string
     {
         return '_enh_ai_slug_title_hash';
+    }
+
+    private static function aiSlugValueFieldName(): string
+    {
+        return '_enh_ai_slug_last_value';
     }
 
     private static function aiSlugBuildTitleHash(string $title): string

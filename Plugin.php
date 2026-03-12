@@ -562,6 +562,9 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
     {
         self::ensurePluginConfigOptionExists();
 
+        $pluginVersion = self::getPluginVersion();
+        $pluginVersionJson = json_encode($pluginVersion, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         echo '<style type="text/css">
     table {
         background: #FFF;
@@ -597,6 +600,17 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         content: "# ";
         font-size:1em;
         color: #c82609;
+    }
+    .enhancement-subtitle{
+        margin:20px 0 8px;
+        font-size: 1.05em;
+        font-weight: bold;
+        color: #334155;
+    }
+    .enhancement-subtitle::before {
+        content: "## ";
+        font-size:1em;
+        color: #64748b;
     }
     .enhancement-backup-box{
         margin-top: 12px;
@@ -687,6 +701,314 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         display: none !important;
     }
 </style>';
+        echo str_replace('__ENHANCEMENT_PLUGIN_VERSION_JSON__', $pluginVersionJson, <<<'HTML'
+<style type="text/css">
+.enhancement-settings-app{margin-top:18px;background:#f6f8fc;border:1px solid #e5ebf5;border-radius:20px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,.06);}
+.enhancement-settings-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:22px 24px;background:#fff;border-bottom:1px solid #e8eef6;}
+.enhancement-settings-brand{min-width:0;}
+.enhancement-settings-brand h2{margin:0;font-size:18px;line-height:1.4;color:#0f172a;font-weight:700;}
+.enhancement-settings-brand p{margin:6px 0 0;font-size:13px;line-height:1.7;color:#64748b;}
+.enhancement-settings-version{color:#2563eb;font-weight:700;}
+.enhancement-settings-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+.enhancement-settings-search{display:inline-flex;align-items:center;gap:8px;height:40px;min-width:260px;padding:0 12px;border:1px solid #d9e2ef;border-radius:12px;background:#f8fafc;box-sizing:border-box;}
+.enhancement-settings-search:focus-within{border-color:#93c5fd;box-shadow:0 0 0 3px rgba(59,130,246,.12);background:#fff;}
+.enhancement-settings-search-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:#94a3b8;font-size:14px;line-height:1;}
+.enhancement-settings-search input{width:100%;border:0;background:transparent;outline:0;box-shadow:none;padding:0;color:#0f172a;font-size:13px;}
+.enhancement-settings-toolbar-btn{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 14px;border-radius:12px;border:1px solid #d6dfef;background:#fff;color:#334155;cursor:pointer;box-sizing:border-box;font-size:13px;line-height:1;}
+.enhancement-settings-toolbar-btn:hover,.enhancement-settings-toolbar-btn:focus{background:#f8fafc;text-decoration:none;}
+.enhancement-settings-toolbar-btn.primary{background:#2563eb;border-color:#2563eb;color:#fff;}
+.enhancement-settings-toolbar-btn.primary:hover,.enhancement-settings-toolbar-btn.primary:focus{background:#1d4ed8;}
+.enhancement-settings-body{display:flex;align-items:stretch;min-height:760px;}
+.enhancement-settings-sidebar{width:240px;flex:0 0 240px;background:#f8fafc;border-right:1px solid #e8eef6;padding:18px;box-sizing:border-box;}
+.enhancement-settings-nav-title{margin:0 0 10px;padding:0 10px;font-size:12px;font-weight:700;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;}
+.enhancement-settings-nav{display:flex;flex-direction:column;gap:8px;}
+.enhancement-settings-nav-item{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border:1px solid transparent;border-radius:12px;background:transparent;color:#334155;cursor:pointer;text-align:left;box-sizing:border-box;transition:all .2s ease;}
+.enhancement-settings-nav-item:hover,.enhancement-settings-nav-item:focus{background:#eef4ff;border-color:#dbe7ff;color:#1d4ed8;}
+.enhancement-settings-nav-item.is-active{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 10px 24px rgba(37,99,235,.18);}
+.enhancement-settings-nav-dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:currentColor;opacity:.85;flex:0 0 auto;}
+.enhancement-settings-nav-label{display:inline-block;min-width:0;font-size:14px;line-height:1.5;}
+.enhancement-settings-content-wrap{flex:1;min-width:0;padding:20px;box-sizing:border-box;}
+form.enhancement-settings-form{margin:0;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced .typecho-option-submit{display:none;}
+.enhancement-settings-main{display:block;}
+.enhancement-settings-panel{display:none;background:#fff;border:1px solid #e7edf6;border-radius:18px;padding:24px 24px 8px;box-shadow:0 8px 24px rgba(15,23,42,.04);}
+.enhancement-settings-panel.is-active{display:block;}
+.enhancement-settings-panel + .enhancement-settings-panel{margin-top:18px;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced .typecho-option{margin:0 0 18px;padding:0 0 18px;border-bottom:1px solid #edf2f7;background:transparent;box-shadow:none;width:auto;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced .typecho-option:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced .typecho-option li{list-style:none;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced .typecho-label{display:block;margin:0 0 10px;color:#0f172a;font-weight:600;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced .typecho-label hr{border:0;border-top:1px solid #e8eef6;margin:14px 0 16px;}
+form.enhancement-settings-form.enhancement-settings-form--enhanced input[type="text"],
+form.enhancement-settings-form.enhancement-settings-form--enhanced input[type="password"],
+form.enhancement-settings-form.enhancement-settings-form--enhanced textarea,
+form.enhancement-settings-form.enhancement-settings-form--enhanced select{width:100%;max-width:100%;box-sizing:border-box;}
+.enhancement-settings-app .enhancement-title{margin:0 0 10px;font-size:26px;line-height:1.25;font-weight:700;color:#0f172a;}
+.enhancement-settings-app .enhancement-title::before{content:none !important;display:none !important;}
+.enhancement-settings-app .enhancement-subtitle{margin:8px 0 10px;font-size:18px;line-height:1.35;font-weight:700;color:#1e293b;}
+.enhancement-settings-app .enhancement-subtitle::before{content:none !important;display:none !important;}
+.enhancement-settings-app .enhancement-backup-box{margin-top:0;border-color:#dce6f5;border-radius:14px;background:#f8fbff;}
+.enhancement-settings-app .enhancement-action-note{color:#64748b;}
+.enhancement-settings-empty{display:none;padding:40px 18px;text-align:center;font-size:14px;line-height:1.8;color:#64748b;background:#fff;border:1px dashed #d8e2f0;border-radius:16px;}
+.enhancement-settings-app.is-searching .enhancement-settings-empty.is-visible{display:block;}
+@media (max-width: 1024px){
+    .enhancement-settings-header{flex-direction:column;align-items:flex-start;}
+    .enhancement-settings-tools{width:100%;justify-content:flex-start;}
+    .enhancement-settings-search{min-width:0;width:100%;}
+    .enhancement-settings-body{flex-direction:column;min-height:0;}
+    .enhancement-settings-sidebar{width:auto;flex:0 0 auto;border-right:0;border-bottom:1px solid #e8eef6;}
+    .enhancement-settings-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));}
+}
+@media (max-width: 640px){
+    .enhancement-settings-header{padding:18px;}
+    .enhancement-settings-content-wrap{padding:14px;}
+    .enhancement-settings-panel{padding:18px 16px 6px;}
+    .enhancement-settings-nav{grid-template-columns:1fr;}
+    .enhancement-settings-toolbar-btn{width:100%;}
+    .enhancement-settings-tools{align-items:stretch;}
+}
+</style>
+<script>
+(function () {
+    var booted = false;
+
+    function boot() {
+        var $ = window.jQuery;
+        if (booted) {
+            return true;
+        }
+        if (!$) {
+            return false;
+        }
+
+        booted = true;
+        $(function () {
+        var pluginVersion = __ENHANCEMENT_PLUGIN_VERSION_JSON__ || '';
+        var $page = $('.typecho-page-main .col-mb-12.col-tb-8.col-tb-offset-2').first();
+        if (!$page.length) {
+            return;
+        }
+
+        var $form = $page.children('form').first();
+        if (!$form.length || !$form.find('.enhancement-title').length || $form.data('enhancementConfigLayout')) {
+            return;
+        }
+
+        $form.data('enhancementConfigLayout', '1');
+
+        var $looseBlocks = $page.children('.typecho-option').detach();
+        var $configForm = $form.detach();
+        var $submit = $configForm.children('.typecho-option-submit').first();
+        var $options = $configForm.children('.typecho-option').not('.typecho-option-submit').detach();
+
+        var $introBlocks = $looseBlocks.filter(function () {
+            return $(this).find('#enhancement-links-help').length > 0;
+        });
+        var $backupBlocks = $looseBlocks.filter(function () {
+            return $(this).find('.enhancement-backup-box').length > 0;
+        });
+        var $miscBlocks = $looseBlocks.not($introBlocks).not($backupBlocks);
+
+        $introBlocks.find('#enhancement-links-help-toggle').remove();
+        $introBlocks.find('#enhancement-links-help').show();
+
+        var $app = $('<div class="enhancement-settings-app"></div>');
+        var $header = $('<div class="enhancement-settings-header"></div>');
+        var $brand = $('<div class="enhancement-settings-brand"><h2>Enhancement <span class="enhancement-settings-version"></span></h2><p>按功能分组管理插件设置，支持搜索、分栏浏览和快捷保存。</p></div>');
+        var $tools = $('<div class="enhancement-settings-tools"></div>');
+        var $search = $('<label class="enhancement-settings-search"><span class="enhancement-settings-search-icon" aria-hidden="true">⌕</span><input type="search" id="enhancement-settings-search-input" placeholder="搜索设置项"></label>');
+        var $saveBtn = $('<button type="button" class="enhancement-settings-toolbar-btn primary">保存设置</button>');
+        var $toggleBtn = $('<button type="button" class="enhancement-settings-toolbar-btn">展开全部</button>');
+        var $body = $('<div class="enhancement-settings-body"></div>');
+        var $sidebar = $('<aside class="enhancement-settings-sidebar"><p class="enhancement-settings-nav-title">功能分组</p><div class="enhancement-settings-nav"></div></aside>');
+        var $nav = $sidebar.find('.enhancement-settings-nav');
+        var $contentWrap = $('<div class="enhancement-settings-content-wrap"></div>');
+        var $main = $('<div class="enhancement-settings-main"></div>');
+        var $empty = $('<div class="enhancement-settings-empty">没有找到匹配的设置项，请换个关键词试试。</div>');
+
+        $brand.find('.enhancement-settings-version').text('v' + pluginVersion);
+        $tools.append($search).append($saveBtn).append($toggleBtn);
+        $header.append($brand).append($tools);
+        $body.append($sidebar).append($contentWrap);
+        $app.append($header).append($body);
+        $page.append($app);
+
+        $configForm.addClass('enhancement-settings-form enhancement-settings-form--enhanced');
+        $contentWrap.append($configForm);
+        $configForm.prepend($main);
+        $main.append($empty);
+        if ($submit.length) {
+            $configForm.append($submit);
+        }
+
+        var sections = [];
+        function pushSection(title, nodes) {
+            if (!nodes || !nodes.length) {
+                return;
+            }
+            sections.push({
+                title: title || '未分类',
+                nodes: nodes
+            });
+        }
+
+        if ($introBlocks.length || $miscBlocks.length) {
+            pushSection('概览', $.makeArray($introBlocks).concat($.makeArray($miscBlocks)));
+        }
+
+        if ($backupBlocks.length) {
+            pushSection('备份插件数据', $.makeArray($backupBlocks));
+        }
+
+        var currentTitle = '';
+        var currentNodes = [];
+        $options.each(function () {
+            var $item = $(this);
+            var $title = $item.find('.enhancement-title:first');
+            if ($title.length) {
+                pushSection(currentTitle, currentNodes);
+                currentTitle = $.trim($title.text()) || '未分类';
+                currentNodes = [this];
+            } else {
+                if (!currentTitle) {
+                    currentTitle = '未分类';
+                }
+                currentNodes.push(this);
+            }
+        });
+        pushSection(currentTitle, currentNodes);
+
+        if (!sections.length) {
+            return;
+        }
+
+        var panels = [];
+        $.each(sections, function (index, section) {
+            var sectionId = 'enhancement-settings-section-' + index;
+            var $navItem = $('<button type="button" class="enhancement-settings-nav-item"></button>').attr('data-section', sectionId);
+            $navItem.append('<span class="enhancement-settings-nav-dot" aria-hidden="true"></span>');
+            $navItem.append($('<span class="enhancement-settings-nav-label"></span>').text(section.title));
+            $nav.append($navItem);
+
+            var $panel = $('<section class="enhancement-settings-panel"></section>').attr('data-section', sectionId);
+            $.each(section.nodes, function (_, node) {
+                $panel.append(node);
+            });
+            $main.append($panel);
+            panels.push({
+                id: sectionId,
+                nav: $navItem,
+                panel: $panel
+            });
+        });
+
+        var currentSectionId = panels[0].id;
+        var showAll = false;
+        var $searchInput = $search.find('input');
+
+        function updateLayout() {
+            var keyword = $.trim(($searchInput.val() || '').toLowerCase());
+            var isSearching = keyword !== '';
+            var visibleCount = 0;
+
+            $app.toggleClass('is-searching', isSearching);
+
+            $.each(panels, function (_, item) {
+                var hasMatch = false;
+                item.panel.children('.typecho-option').each(function () {
+                    var $option = $(this);
+                    var matched = true;
+                    if (isSearching) {
+                        matched = ($option.text() || '').toLowerCase().indexOf(keyword) >= 0;
+                    }
+                    $option.toggle(matched);
+                    if (matched) {
+                        hasMatch = true;
+                    }
+                });
+
+                item.nav.toggle(!isSearching || hasMatch);
+
+                var shouldShow = isSearching ? hasMatch : (showAll || item.id === currentSectionId);
+                item.panel.toggle(shouldShow);
+                item.panel.toggleClass('is-active', !isSearching && item.id === currentSectionId);
+                item.nav.toggleClass('is-active', !isSearching && item.id === currentSectionId);
+
+                if (shouldShow) {
+                    visibleCount++;
+                }
+            });
+
+            $empty.toggleClass('is-visible', isSearching && visibleCount === 0);
+
+            if (isSearching) {
+                $toggleBtn.text('清空搜索');
+            } else {
+                $toggleBtn.text(showAll ? '收起分组' : '展开全部');
+            }
+        }
+
+        $nav.on('click', '.enhancement-settings-nav-item', function () {
+            var sectionId = $(this).attr('data-section') || '';
+            if (!sectionId) {
+                return;
+            }
+
+            if ($app.hasClass('is-searching')) {
+                var $target = $main.find('.enhancement-settings-panel[data-section="' + sectionId + '"]');
+                if ($target.length && $target.is(':visible') && $target.get(0).scrollIntoView) {
+                    $target.get(0).scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+                return;
+            }
+
+            currentSectionId = sectionId;
+            updateLayout();
+        });
+
+        $saveBtn.on('click', function () {
+            var $submitTarget = $submit.find('input[type="submit"], button[type="submit"]').first();
+            if ($submitTarget.length) {
+                $submitTarget.trigger('click');
+            }
+        });
+
+        $toggleBtn.on('click', function () {
+            if ($app.hasClass('is-searching')) {
+                $searchInput.val('');
+                updateLayout();
+                return;
+            }
+
+            showAll = !showAll;
+            updateLayout();
+        });
+
+        $searchInput.on('input', function () {
+            updateLayout();
+        });
+
+            updateLayout();
+        });
+
+        return true;
+    }
+
+    if (boot()) {
+        return;
+    }
+
+    var attempts = 0;
+    var timer = window.setInterval(function () {
+        attempts++;
+        if (boot() || attempts > 200) {
+            window.clearInterval(timer);
+        }
+    }, 50);
+})();
+</script>
+HTML
+        );
         self::renderPhpExtensionNotice();
         echo '<div class="typecho-option" style="margin-top:12px;">
             <button type="button" class="btn enhancement-action-btn" id="enhancement-links-help-toggle" style="display:none;">帮助</button>
@@ -808,24 +1130,6 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $dsize->input->setAttribute('class', 'w-10');
         $form->addInput($dsize->addRule('isInteger', _t('请填写整数数字')));
-        
-        $enableLinkApprovalMailNotifier = new Typecho_Widget_Helper_Form_Element_Radio(
-            'enable_link_approval_mail_notifier',
-            array('1' => _t('启用'), '0' => _t('禁用')),
-            '0',
-            _t('友情链接审核通过邮件提醒'),
-            _t('开启后，友情链接审核通过时会向该友链填写的邮箱发送提醒（需已配置 SMTP）')
-        );
-        $form->addInput($enableLinkApprovalMailNotifier);
-
-        $enableLinkSubmitAdminMailNotifier = new Typecho_Widget_Helper_Form_Element_Radio(
-            'enable_link_submit_admin_mail_notifier',
-            array('1' => _t('启用'), '0' => _t('禁用')),
-            '0',
-            _t('新友情链接申请通知管理员'),
-            _t('开启后，前台提交新的友情链接申请时会向站长收件邮箱发送审核提醒；若未填写站长收件邮箱，则回退到 SMTP 邮箱地址（需已配置 SMTP）')
-        );
-        $form->addInput($enableLinkSubmitAdminMailNotifier);
 
         $momentsToken = new Typecho_Widget_Helper_Form_Element_Text(
             'moments_token',
@@ -956,6 +1260,24 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $form->addInput($goRedirectWhitelist->addRule('maxLength', _t('白名单最多2000个字符'), 2000));
 
+        $enableAvatarMirror = new Typecho_Widget_Helper_Form_Element_Radio(
+            'enable_avatar_mirror',
+            array('1' => _t('启用'), '0' => _t('禁用')),
+            '1',
+            _t('Gravatar镜像加速'),
+            _t('启用后使用镜像地址加载Gavatar头像，改善国内访问速度')
+        );
+        $form->addInput($enableAvatarMirror);
+
+        $avatarMirrorUrl = new Typecho_Widget_Helper_Form_Element_Text(
+            'avatar_mirror_url',
+            null,
+            'https://cn.cravatar.com/avatar/',
+            _t('Gavatar镜像地址'),
+            _t('示例：https://cn.cravatar.com/avatar/（需以 /avatar/ 结尾；禁用时将使用 Gravatar 官方地址）')
+        );
+        $form->addInput($avatarMirrorUrl->addRule('maxLength', _t('地址最多200个字符'), 200));
+
         $enableTurnstile = new Typecho_Widget_Helper_Form_Element_Radio(
             'enable_turnstile',
             array('1' => _t('启用'), '0' => _t('禁用')),
@@ -1002,6 +1324,15 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $form->addInput($enableAiSummary);
 
+        $enableAiSlugTranslate = new Typecho_Widget_Helper_Form_Element_Radio(
+            'enable_ai_slug_translate',
+            array('1' => _t('启用'), '0' => _t('禁用')),
+            '0',
+            _t('AI Slug 自动翻译'),
+            _t('在编辑页将 slug 输入框清空后，失焦时调用 AI 生成英文 slug 并自动回填')
+        );
+        $form->addInput($enableAiSlugTranslate);
+        
         $aiSummaryApiUrl = new Typecho_Widget_Helper_Form_Element_Text(
             'ai_summary_api_url',
             null,
@@ -1086,15 +1417,6 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $form->addInput($aiSslVerify);
 
-        $enableAiSlugTranslate = new Typecho_Widget_Helper_Form_Element_Radio(
-            'enable_ai_slug_translate',
-            array('1' => _t('启用'), '0' => _t('禁用')),
-            '0',
-            _t('<h3 class="enhancement-title">AI Slug 设置</h3>清空 Slug 后自动翻译'),
-            _t('在编辑页将 slug 输入框清空后，失焦时调用 AI 生成英文 slug 并自动回填')
-        );
-        $form->addInput($enableAiSlugTranslate);
-
         $aiSlugPrompt = new Typecho_Widget_Helper_Form_Element_Textarea(
             'ai_slug_prompt',
             null,
@@ -1122,24 +1444,6 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
         );
         $aiSlugMaxLength->input->setAttribute('class', 'w-10');
         $form->addInput($aiSlugMaxLength->addRule('isInteger', _t('请填写整数数字')));
-
-        $enableAvatarMirror = new Typecho_Widget_Helper_Form_Element_Radio(
-            'enable_avatar_mirror',
-            array('1' => _t('启用'), '0' => _t('禁用')),
-            '1',
-            _t('<h3 class="enhancement-title">头像设置</h3>头像镜像加速'),
-            _t('启用后使用镜像地址加载邮箱头像，改善国内访问速度')
-        );
-        $form->addInput($enableAvatarMirror);
-
-        $avatarMirrorUrl = new Typecho_Widget_Helper_Form_Element_Text(
-            'avatar_mirror_url',
-            null,
-            'https://cn.cravatar.com/avatar/',
-            _t('镜像地址'),
-            _t('示例：https://cn.cravatar.com/avatar/（需以 /avatar/ 结尾；禁用时将使用 Gravatar 官方地址）')
-        );
-        $form->addInput($avatarMirrorUrl->addRule('maxLength', _t('地址最多200个字符'), 200));
 
         $enableCommentByQQ = new Typecho_Widget_Helper_Form_Element_Radio(
             'enable_comment_by_qq',
@@ -1235,6 +1539,24 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
             _t('评论通过/回复时发送邮件提醒')
         );
         $form->addInput($enableCommentNotifier);
+              
+        $enableLinkApprovalMailNotifier = new Typecho_Widget_Helper_Form_Element_Radio(
+            'enable_link_approval_mail_notifier',
+            array('1' => _t('启用'), '0' => _t('禁用')),
+            '0',
+            _t('友情链接审核通过邮件提醒'),
+            _t('开启后，友情链接审核通过时会向该友链填写的邮箱发送提醒（需已配置 SMTP）')
+        );
+        $form->addInput($enableLinkApprovalMailNotifier);
+
+        $enableLinkSubmitAdminMailNotifier = new Typecho_Widget_Helper_Form_Element_Radio(
+            'enable_link_submit_admin_mail_notifier',
+            array('1' => _t('启用'), '0' => _t('禁用')),
+            '0',
+            _t('新友情链接申请通知管理员'),
+            _t('开启后，前台提交新的友情链接申请时会向站长收件邮箱发送审核提醒；若未填写站长收件邮箱，则回退到 SMTP 邮箱地址（需已配置 SMTP）')
+        );
+        $form->addInput($enableLinkSubmitAdminMailNotifier);
 
         $fromName = new Typecho_Widget_Helper_Form_Element_Text(
             'fromName',

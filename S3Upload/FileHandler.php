@@ -3,6 +3,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
 }
 
+require_once dirname(__DIR__) . '/AttachmentResolverHelper.php';
+
 class Enhancement_S3Upload_FileHandler
 {
     const MIN_COMPRESS_SIZE = 102400; // 100KB
@@ -13,7 +15,7 @@ class Enhancement_S3Upload_FileHandler
             return false;
         }
 
-        if (!self::shouldUseS3()) {
+        if (!self::canPerformRemoteObjectRequests()) {
             if (class_exists('Enhancement_Plugin') && Enhancement_Plugin::s3UploadEnabled()) {
                 Enhancement_S3Upload_Utils::log('S3 上传未生效：配置不完整或服务器环境不满足，已回退本地上传', 'warning');
             }
@@ -107,7 +109,7 @@ class Enhancement_S3Upload_FileHandler
 
     public static function modifyHandle($content, $file)
     {
-        if (!self::shouldUseS3()) {
+        if (!self::canPerformRemoteObjectRequests()) {
             return self::localModifyHandle($content, $file);
         }
 
@@ -130,15 +132,15 @@ class Enhancement_S3Upload_FileHandler
 
     public static function deleteHandle($content)
     {
-        if (!self::shouldUseS3()) {
+        if (!self::canPerformRemoteObjectRequests()) {
             return self::localDeleteHandle($content);
         }
 
-        $path = self::extractPathFromContent($content);
+        $path = Enhancement_AttachmentResolverHelper::extractPathFromContent($content);
         if ($path === '') {
             return false;
         }
-        if (self::isLocalUploadPath($path)) {
+        if (Enhancement_AttachmentResolverHelper::isLocalUploadPath($path)) {
             return self::localDeleteHandle($content);
         }
 
@@ -163,48 +165,61 @@ class Enhancement_S3Upload_FileHandler
 
     public static function attachmentHandle($content)
     {
-        if (!self::shouldUseS3()) {
-            return self::localAttachmentHandle($content);
-        }
-
-        $path = self::extractPathFromContent($content);
+        $path = Enhancement_AttachmentResolverHelper::extractPathFromContent($content);
         if ($path === '') {
             return '';
         }
-        if (self::isLocalUploadPath($path)) {
+        if (Enhancement_AttachmentResolverHelper::isLocalUploadPath($path)) {
             return self::localAttachmentHandle($content);
         }
 
-        try {
-            $client = Enhancement_S3Upload_S3Client::getInstance();
-            return $client->getObjectUrl($path);
-        } catch (Exception $e) {
-            Enhancement_S3Upload_Utils::log('获取附件URL失败: ' . $e->getMessage(), 'error');
-            return self::localAttachmentHandle($content);
+        if (self::canBuildRemoteAttachmentUrl()) {
+            try {
+                $client = Enhancement_S3Upload_S3Client::getInstance();
+                $url = $client->getObjectUrl($path);
+                if (is_string($url) && trim($url) !== '') {
+                    return $url;
+                }
+            } catch (Exception $e) {
+                Enhancement_S3Upload_Utils::log('获取附件URL失败: ' . $e->getMessage(), 'error');
+            }
         }
+
+        if (self::hasLocalAttachmentBackup($path)) {
+            return Enhancement_AttachmentResolverHelper::buildLocalAttachmentUrlByPath($path);
+        }
+
+        return '';
     }
 
     public static function attachmentDataHandle($content)
     {
-        if (!self::shouldUseS3()) {
-            return self::localAttachmentDataHandle($content);
-        }
-
-        $path = self::extractPathFromContent($content);
-        if (self::isLocalUploadPath($path)) {
-            return self::localAttachmentDataHandle($content);
-        }
-
-        $url = self::attachmentHandle($content);
-        if ($url === '') {
+        $path = Enhancement_AttachmentResolverHelper::extractPathFromContent($content);
+        if ($path === '') {
             return '';
         }
+        if (Enhancement_AttachmentResolverHelper::isLocalUploadPath($path)) {
+            return self::localAttachmentDataHandle($content);
+        }
 
-        $data = @file_get_contents($url);
-        return is_string($data) ? $data : '';
+        if (self::canBuildRemoteAttachmentUrl()) {
+            $url = self::attachmentHandle($content);
+            if ($url !== '') {
+                $data = @file_get_contents($url);
+                if (is_string($data)) {
+                    return $data;
+                }
+            }
+        }
+
+        if (self::hasLocalAttachmentBackup($path)) {
+            return self::localAttachmentDataHandle($content);
+        }
+
+        return '';
     }
 
-    private static function shouldUseS3(): bool
+    private static function canPerformRemoteObjectRequests(): bool
     {
         if (!class_exists('Enhancement_Plugin')) {
             return false;
@@ -231,93 +246,6 @@ class Enhancement_S3Upload_FileHandler
         }
 
         return (object) array();
-    }
-
-    private static function extractPathFromContent($content)
-    {
-        $path = '';
-
-        if (is_array($content)) {
-            if (isset($content['attachment'])) {
-                if (is_object($content['attachment']) && isset($content['attachment']->path)) {
-                    $path = (string)$content['attachment']->path;
-                } elseif (is_array($content['attachment']) && isset($content['attachment']['path'])) {
-                    $path = (string)$content['attachment']['path'];
-                }
-            }
-            if ($path === '' && isset($content['path'])) {
-                $path = (string)$content['path'];
-            }
-        } elseif (is_object($content)) {
-            if (isset($content->attachment)) {
-                if (is_object($content->attachment) && isset($content->attachment->path)) {
-                    $path = (string)$content->attachment->path;
-                } elseif (is_array($content->attachment) && isset($content->attachment['path'])) {
-                    $path = (string)$content->attachment['path'];
-                }
-            }
-            if ($path === '' && isset($content->path)) {
-                $path = (string)$content->path;
-            }
-        }
-
-        return ltrim(trim($path), '/');
-    }
-
-    private static function extractAttachmentMeta($content)
-    {
-        $meta = array(
-            'name' => '',
-            'path' => '',
-            'size' => 0,
-            'type' => '',
-            'mime' => ''
-        );
-
-        if (is_array($content)) {
-            if (isset($content['attachment'])) {
-                $attachment = $content['attachment'];
-                if (is_object($attachment)) {
-                    $meta['name'] = isset($attachment->name) ? (string)$attachment->name : '';
-                    $meta['path'] = isset($attachment->path) ? (string)$attachment->path : '';
-                    $meta['size'] = isset($attachment->size) ? intval($attachment->size) : 0;
-                    $meta['type'] = isset($attachment->type) ? (string)$attachment->type : '';
-                    $meta['mime'] = isset($attachment->mime) ? (string)$attachment->mime : '';
-                } elseif (is_array($attachment)) {
-                    $meta['name'] = isset($attachment['name']) ? (string)$attachment['name'] : '';
-                    $meta['path'] = isset($attachment['path']) ? (string)$attachment['path'] : '';
-                    $meta['size'] = isset($attachment['size']) ? intval($attachment['size']) : 0;
-                    $meta['type'] = isset($attachment['type']) ? (string)$attachment['type'] : '';
-                    $meta['mime'] = isset($attachment['mime']) ? (string)$attachment['mime'] : '';
-                }
-            }
-            if ($meta['path'] === '' && isset($content['path'])) {
-                $meta['path'] = (string)$content['path'];
-            }
-        } elseif (is_object($content)) {
-            if (isset($content->attachment)) {
-                $attachment = $content->attachment;
-                if (is_object($attachment)) {
-                    $meta['name'] = isset($attachment->name) ? (string)$attachment->name : '';
-                    $meta['path'] = isset($attachment->path) ? (string)$attachment->path : '';
-                    $meta['size'] = isset($attachment->size) ? intval($attachment->size) : 0;
-                    $meta['type'] = isset($attachment->type) ? (string)$attachment->type : '';
-                    $meta['mime'] = isset($attachment->mime) ? (string)$attachment->mime : '';
-                } elseif (is_array($attachment)) {
-                    $meta['name'] = isset($attachment['name']) ? (string)$attachment['name'] : '';
-                    $meta['path'] = isset($attachment['path']) ? (string)$attachment['path'] : '';
-                    $meta['size'] = isset($attachment['size']) ? intval($attachment['size']) : 0;
-                    $meta['type'] = isset($attachment['type']) ? (string)$attachment['type'] : '';
-                    $meta['mime'] = isset($attachment['mime']) ? (string)$attachment['mime'] : '';
-                }
-            }
-            if ($meta['path'] === '' && isset($content->path)) {
-                $meta['path'] = (string)$content->path;
-            }
-        }
-
-        $meta['path'] = ltrim(trim((string)$meta['path']), '/');
-        return $meta;
     }
 
     private static function localUploadHandle($file)
@@ -384,7 +312,7 @@ class Enhancement_S3Upload_FileHandler
             return false;
         }
 
-        $meta = self::extractAttachmentMeta($content);
+        $meta = Enhancement_AttachmentResolverHelper::extractAttachmentMeta($content);
         if ($meta['path'] === '' || $meta['type'] === '') {
             return false;
         }
@@ -437,37 +365,41 @@ class Enhancement_S3Upload_FileHandler
 
     private static function localDeleteHandle($content)
     {
-        $path = self::extractPathFromContent($content);
+        $path = Enhancement_AttachmentResolverHelper::extractPathFromContent($content);
         if ($path === '') {
             return false;
         }
 
-        $rootDir = defined('__TYPECHO_UPLOAD_ROOT_DIR__') ? __TYPECHO_UPLOAD_ROOT_DIR__ : __TYPECHO_ROOT_DIR__;
-        $fullPath = Typecho_Common::url('/' . ltrim($path, '/'), $rootDir);
+        $fullPath = Enhancement_AttachmentResolverHelper::resolveLocalAttachmentFullPath($path);
+        if ($fullPath === '') {
+            return false;
+        }
+
         return @unlink($fullPath);
     }
 
     private static function localAttachmentHandle($content)
     {
-        $path = self::extractPathFromContent($content);
+        $path = Enhancement_AttachmentResolverHelper::extractPathFromContent($content);
         if ($path === '') {
             return '';
         }
 
-        $options = Typecho_Widget::widget('Widget_Options');
-        $base = defined('__TYPECHO_UPLOAD_URL__') ? __TYPECHO_UPLOAD_URL__ : $options->siteUrl;
-        return Typecho_Common::url('/' . ltrim($path, '/'), $base);
+        return Enhancement_AttachmentResolverHelper::buildLocalAttachmentUrlByPath($path);
     }
 
     private static function localAttachmentDataHandle($content)
     {
-        $path = self::extractPathFromContent($content);
+        $path = Enhancement_AttachmentResolverHelper::extractPathFromContent($content);
         if ($path === '') {
             return '';
         }
 
-        $rootDir = defined('__TYPECHO_UPLOAD_ROOT_DIR__') ? __TYPECHO_UPLOAD_ROOT_DIR__ : __TYPECHO_ROOT_DIR__;
-        $fullPath = Typecho_Common::url('/' . ltrim($path, '/'), $rootDir);
+        $fullPath = Enhancement_AttachmentResolverHelper::resolveLocalAttachmentFullPath($path);
+        if ($fullPath === '') {
+            return '';
+        }
+
         $data = @file_get_contents($fullPath);
         return is_string($data) ? $data : '';
     }
@@ -586,9 +518,24 @@ class Enhancement_S3Upload_FileHandler
         return $dirname . $base . '.webp';
     }
 
-    private static function isLocalUploadPath($path): bool
+    private static function canBuildRemoteAttachmentUrl(): bool
     {
-        $path = ltrim(trim((string)$path), '/');
-        return strpos($path, 'usr/uploads/') === 0;
+        if (!class_exists('Enhancement_Plugin')) {
+            return false;
+        }
+        if (!Enhancement_Plugin::s3UploadEnabled()) {
+            return false;
+        }
+        if (!Enhancement_Plugin::s3UploadConfigured()) {
+            return false;
+        }
+
+        return class_exists('Enhancement_S3Upload_S3Client');
+    }
+
+    private static function hasLocalAttachmentBackup($path): bool
+    {
+        $settings = self::pluginSettings();
+        return Enhancement_AttachmentResolverHelper::hasLocalAttachmentBackup($path, $settings);
     }
 }

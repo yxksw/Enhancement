@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/AttachmentResolverHelper.php';
+
 class Enhancement_S3Helper
 {
     private static $runtimeLoaded = null;
@@ -160,8 +162,6 @@ class Enhancement_S3Helper
             return '';
         }
 
-        $options = Typecho_Widget::widget('Widget_Options');
-        $base = defined('__TYPECHO_UPLOAD_URL__') ? __TYPECHO_UPLOAD_URL__ : $options->siteUrl;
-        return Typecho_Common::url('/' . $path, $base);
+        return Enhancement_AttachmentResolverHelper::buildLocalAttachmentUrlByPath($path);
     }
 }

@@ -956,6 +956,42 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         return false;
     }
 
+    private function installedPackagePath($baseDir, $name)
+    {
+        $rootDir = defined('__TYPECHO_ROOT_DIR__') ? __TYPECHO_ROOT_DIR__ : dirname(dirname(dirname(__FILE__)));
+        return rtrim($rootDir . $baseDir, '/\\') . DIRECTORY_SEPARATOR . $name;
+    }
+
+    private function deleteInstalledPackage($name, $typeLabel, $baseDir, $allowSingleFile = false)
+    {
+        $name = trim((string)$name);
+        if ($name === '' || !preg_match('/^[a-zA-Z0-9_-]+$/', $name)) {
+            $this->uploadResponse(false, _t('%s名称不合法', $typeLabel), 400);
+            return;
+        }
+
+        $path = $this->installedPackagePath($baseDir, $name);
+        if (!is_dir($path)) {
+            if ($allowSingleFile) {
+                $file = $path . '.php';
+                if (is_file($file) && @unlink($file)) {
+                    $this->uploadResponse(true, _t('%s已删除：%s', $typeLabel, $name), 200);
+                    return;
+                }
+            }
+
+            $this->uploadResponse(false, _t('%s不存在：%s', $typeLabel, $name), 404);
+            return;
+        }
+
+        if ($this->removeDirectoryRecursively($path)) {
+            $this->uploadResponse(true, _t('%s已删除：%s', $typeLabel, $name), 200);
+            return;
+        }
+
+        $this->uploadResponse(false, _t('%s删除失败：%s', $typeLabel, $name), 500);
+    }
+
     public function uploadPackage()
     {
         $this->widget('Widget_User')->pass('administrator');
@@ -1160,58 +1196,15 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
     public function deletePluginPackage()
     {
         $this->widget('Widget_User')->pass('administrator');
-        $name = trim((string)$this->request->get('name'));
-        if ($name === '' || !preg_match('/^[a-zA-Z0-9_-]+$/', $name)) {
-            $this->uploadResponse(false, _t('插件名称不合法'), 400);
-            return;
-        }
-
         $pluginDir = defined('__TYPECHO_PLUGIN_DIR__') ? __TYPECHO_PLUGIN_DIR__ : '/usr/plugins';
-        $rootDir = defined('__TYPECHO_ROOT_DIR__') ? __TYPECHO_ROOT_DIR__ : dirname(dirname(dirname(__FILE__)));
-        $path = rtrim($rootDir . $pluginDir, '/\\') . DIRECTORY_SEPARATOR . $name;
-
-        if (!is_dir($path)) {
-            $file = $path . '.php';
-            if (is_file($file) && @unlink($file)) {
-                $this->uploadResponse(true, _t('插件已删除：%s', $name), 200);
-                return;
-            }
-            $this->uploadResponse(false, _t('插件不存在：%s', $name), 404);
-            return;
-        }
-
-        if ($this->removeDirectoryRecursively($path)) {
-            $this->uploadResponse(true, _t('插件已删除：%s', $name), 200);
-            return;
-        }
-
-        $this->uploadResponse(false, _t('插件删除失败：%s', $name), 500);
+        $this->deleteInstalledPackage($this->request->get('name'), _t('插件'), $pluginDir, true);
     }
 
     public function deleteThemePackage()
     {
         $this->widget('Widget_User')->pass('administrator');
-        $name = trim((string)$this->request->get('name'));
-        if ($name === '' || !preg_match('/^[a-zA-Z0-9_-]+$/', $name)) {
-            $this->uploadResponse(false, _t('主题名称不合法'), 400);
-            return;
-        }
-
         $themeDir = defined('__TYPECHO_THEME_DIR__') ? __TYPECHO_THEME_DIR__ : '/usr/themes';
-        $rootDir = defined('__TYPECHO_ROOT_DIR__') ? __TYPECHO_ROOT_DIR__ : dirname(dirname(dirname(__FILE__)));
-        $path = rtrim($rootDir . $themeDir, '/\\') . DIRECTORY_SEPARATOR . $name;
-
-        if (!is_dir($path)) {
-            $this->uploadResponse(false, _t('主题不存在：%s', $name), 404);
-            return;
-        }
-
-        if ($this->removeDirectoryRecursively($path)) {
-            $this->uploadResponse(true, _t('主题已删除：%s', $name), 200);
-            return;
-        }
-
-        $this->uploadResponse(false, _t('主题删除失败：%s', $name), 500);
+        $this->deleteInstalledPackage($this->request->get('name'), _t('主题'), $themeDir, false);
     }
 
     public function retryQqNotifyQueue()
@@ -2234,27 +2227,30 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         }
     }
 
-    public function insertMoment()
+    private function buildMomentPayload($includeSource = false, $includeCreated = false)
     {
-        if (Enhancement_Plugin::momentsForm('insert')->validate()) {
-            $this->response->goBack();
-        }
-
-        Enhancement_Plugin::ensureMomentsTable();
-
         $moment = array();
         $moment['content'] = (string)$this->request->get('content');
         $moment['tags'] = $this->request->filter('xss')->tags;
         $moment['status'] = Enhancement_Plugin::normalizeMomentStatus($this->request->get('status'), 'public');
-        $moment['source'] = Enhancement_Plugin::detectMomentSourceByUserAgent($this->request->getServer('HTTP_USER_AGENT'));
         $moment['latitude'] = Enhancement_Plugin::normalizeMomentLatitude($this->request->get('latitude'));
         $moment['longitude'] = Enhancement_Plugin::normalizeMomentLongitude($this->request->get('longitude'));
+
         if ($moment['latitude'] === null || $moment['longitude'] === null) {
             $moment['latitude'] = null;
             $moment['longitude'] = null;
         }
+
         $moment['location_address'] = Enhancement_Plugin::normalizeMomentLocationAddress($this->request->filter('xss')->location_address);
-        $moment['created'] = $this->options->time;
+
+        if ($includeSource) {
+            $moment['source'] = Enhancement_Plugin::detectMomentSourceByUserAgent($this->request->getServer('HTTP_USER_AGENT'));
+        }
+
+        if ($includeCreated) {
+            $moment['created'] = $this->options->time;
+        }
+
         $mediaRaw = $this->request->get('media');
         $mediaRaw = is_string($mediaRaw) ? trim($mediaRaw) : $mediaRaw;
         if (empty($mediaRaw)) {
@@ -2265,6 +2261,19 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         } else {
             $moment['media'] = $mediaRaw;
         }
+
+        return $moment;
+    }
+
+    public function insertMoment()
+    {
+        if (Enhancement_Plugin::momentsForm('insert')->validate()) {
+            $this->response->goBack();
+        }
+
+        Enhancement_Plugin::ensureMomentsTable();
+
+        $moment = $this->buildMomentPayload(true, true);
 
         try {
             $mid = $this->db->query($this->db->insert($this->prefix . 'moments')->rows($moment));
@@ -2286,28 +2295,8 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
 
         Enhancement_Plugin::ensureMomentsTable();
 
-        $moment = array();
-        $moment['content'] = (string)$this->request->get('content');
-        $moment['tags'] = $this->request->filter('xss')->tags;
-        $moment['status'] = Enhancement_Plugin::normalizeMomentStatus($this->request->get('status'), 'public');
-        $moment['latitude'] = Enhancement_Plugin::normalizeMomentLatitude($this->request->get('latitude'));
-        $moment['longitude'] = Enhancement_Plugin::normalizeMomentLongitude($this->request->get('longitude'));
-        if ($moment['latitude'] === null || $moment['longitude'] === null) {
-            $moment['latitude'] = null;
-            $moment['longitude'] = null;
-        }
-        $moment['location_address'] = Enhancement_Plugin::normalizeMomentLocationAddress($this->request->filter('xss')->location_address);
+        $moment = $this->buildMomentPayload(false, false);
         $mid = $this->request->get('mid');
-        $mediaRaw = $this->request->get('media');
-        $mediaRaw = is_string($mediaRaw) ? trim($mediaRaw) : $mediaRaw;
-        if (empty($mediaRaw)) {
-            $cleanedContent = $moment['content'];
-            $mediaItems = Enhancement_Plugin::extractMediaFromContent($moment['content'], $cleanedContent);
-            $moment['media'] = !empty($mediaItems) ? json_encode($mediaItems, JSON_UNESCAPED_UNICODE) : null;
-            $moment['content'] = $cleanedContent;
-        } else {
-            $moment['media'] = $mediaRaw;
-        }
 
         try {
             $this->db->query($this->db->update($this->prefix . 'moments')->rows($moment)->where('mid = ?', $mid));
@@ -2575,6 +2564,21 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         echo '</body></html>';
     }
 
+    private function protectRequest($requireAdministrator = false)
+    {
+        Helper::security()->protect();
+
+        if ($requireAdministrator) {
+            Typecho_Widget::widget('Widget_User')->pass('administrator');
+        }
+    }
+
+    private function dispatchRequestAction($method, $requireAdministrator = false)
+    {
+        $this->protectRequest($requireAdministrator);
+        $this->{$method}();
+    }
+
     public function action()
     {
         $this->db = Typecho_Db::get();
@@ -2588,82 +2592,23 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         $hasMid = false;
         $this->request->get('mid', null, $hasMid);
         $hasMidArray = !empty($this->request->getArray('mid'));
+        $administratorActions = array(
+            'backup-settings' => 'backupPluginSettings',
+            'restore-settings' => 'restorePluginSettings',
+            'delete-backup' => 'deletePluginSettingsBackup',
+            'qq-test-notify' => 'sendQqTestNotify',
+            'qq-queue-retry' => 'retryQqNotifyQueue',
+            'qq-queue-clear' => 'clearQqNotifyQueue',
+            'upload-package' => 'uploadPackage',
+            'delete-plugin-package' => 'deletePluginPackage',
+            'delete-theme-package' => 'deleteThemePackage',
+            'ai-summary-batch' => 'batchGenerateAiSummary',
+            'ai-slug-translate' => 'previewAiSlug',
+            'resolve-attachment-urls' => 'resolveAttachmentUrls'
+        );
 
         if ($action === 'enhancement-submit' || $this->request->is('do=submit')) {
-            Helper::security()->protect();
-            $this->submitEnhancement();
-            return;
-        }
-
-        if ($this->request->is('do=backup-settings')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->backupPluginSettings();
-            return;
-        }
-
-        if ($this->request->is('do=restore-settings')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->restorePluginSettings();
-            return;
-        }
-
-        if ($this->request->is('do=delete-backup')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->deletePluginSettingsBackup();
-            return;
-        }
-
-        if ($this->request->is('do=qq-test-notify')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->sendQqTestNotify();
-            return;
-        }
-
-        if ($this->request->is('do=qq-queue-retry')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->retryQqNotifyQueue();
-            return;
-        }
-
-        if ($this->request->is('do=qq-queue-clear')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->clearQqNotifyQueue();
-            return;
-        }
-
-        if ($this->request->is('do=upload-package')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->uploadPackage();
-            return;
-        }
-
-        if ($this->request->is('do=delete-plugin-package')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->deletePluginPackage();
-            return;
-        }
-
-        if ($this->request->is('do=delete-theme-package')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->deleteThemePackage();
+            $this->dispatchRequestAction('submitEnhancement');
             return;
         }
 
@@ -2672,28 +2617,11 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             return;
         }
 
-        if ($this->request->is('do=ai-summary-batch')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->batchGenerateAiSummary();
-            return;
-        }
-
-        if ($this->request->is('do=ai-slug-translate')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->previewAiSlug();
-            return;
-        }
-
-        if ($this->request->is('do=resolve-attachment-urls')) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
-            $this->resolveAttachmentUrls();
-            return;
+        foreach ($administratorActions as $requestAction => $method) {
+            if ($this->request->is('do=' . $requestAction)) {
+                $this->dispatchRequestAction($method, true);
+                return;
+            }
         }
 
         $isMomentsAction = ($action === 'enhancement-moments-edit')
@@ -2703,9 +2631,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             || $hasMidArray;
 
         if ($isMomentsAction) {
-            Helper::security()->protect();
-            $user = Typecho_Widget::widget('Widget_User');
-            $user->pass('administrator');
+            $this->protectRequest(true);
 
             $this->on($this->request->is('do=insert'))->insertMoment();
             $this->on($this->request->is('do=update'))->updateMoment();
@@ -2714,9 +2640,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             return;
         }
 
-        Helper::security()->protect();
-        $user = Typecho_Widget::widget('Widget_User');
-        $user->pass('administrator');
+        $this->protectRequest(true);
 
         $this->on($this->request->is('do=insert'))->insertEnhancement();
         $this->on($this->request->is('do=update'))->updateEnhancement();

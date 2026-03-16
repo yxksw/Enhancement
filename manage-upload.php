@@ -1,18 +1,7 @@
 <?php
 
-Typecho_Widget::widget('Widget_Init');
-Typecho_Plugin::factory('admin/common.php')->begin();
-
-Typecho_Widget::widget('Widget_Options')->to($options);
-Typecho_Widget::widget('Widget_User')->to($user);
-Typecho_Widget::widget('Widget_Security')->to($security);
-Typecho_Widget::widget('Widget_Menu')->to($menu);
-
-$request = $options->request;
-$response = $options->response;
-
-include 'header.php';
-include 'menu.php';
+include 'manage-init.php';
+include 'manage-page-start.php';
 ?>
 
 <style>
@@ -70,10 +59,7 @@ include 'menu.php';
 .enh-upload-status.loading { color: #2563eb; }
 </style>
 
-<div class="main">
-    <div class="body container">
-        <?php include 'page-title.php'; ?>
-        <div class="row typecho-page-main manage-metas">
+<?php include 'manage-layout-start.php'; ?>
             <div class="col-mb-12 col-tb-12" role="main">
                 <div class="enh-upload-card">
                     <h3 class="enh-upload-title"><?php _e('上传插件 / 主题'); ?></h3>
@@ -178,13 +164,10 @@ include 'menu.php';
                     </table>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
+<?php include 'manage-layout-end.php'; ?>
 
 <?php
-include 'copyright.php';
-include 'common-js.php';
+include 'manage-page-assets.php';
 ?>
 
 <script>

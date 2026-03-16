@@ -1,19 +1,6 @@
 <?php
 
-/** 初始化组件 */
-Typecho_Widget::widget('Widget_Init');
-
-/** 注册一个初始化插件 */
-Typecho_Plugin::factory('admin/common.php')->begin();
-
-Typecho_Widget::widget('Widget_Options')->to($options);
-Typecho_Widget::widget('Widget_User')->to($user);
-Typecho_Widget::widget('Widget_Security')->to($security);
-Typecho_Widget::widget('Widget_Menu')->to($menu);
-
-/** 初始化上下文 */
-$request = $options->request;
-$response = $options->response;
+include 'manage-init.php';
 
 $settings = null;
 if (class_exists('Enhancement_Plugin') && method_exists('Enhancement_Plugin', 'runtimeSettings')) {
@@ -136,19 +123,16 @@ if ($page > 1) {
 }
 $batchForceActionUrl = $batchActionUrl . '&force=1';
 
-include 'header.php';
-include 'menu.php';
+include 'manage-page-start.php';
 ?>
 
-<div class="main">
-    <div class="body container">
-        <?php include 'page-title.php'; ?>
-        <div class="row typecho-page-main manage-metas">
+<?php include 'manage-layout-start.php'; ?>
             <div class="col-mb-12">
-                <ul class="typecho-option-tabs clearfix">
-                    <li class="current"><a href="<?php $options->adminUrl('extending.php?panel=Enhancement/manage-ai-summary.php'); ?>"><?php _e('摘要'); ?></a></li>
-                    <li><a href="<?php $options->adminUrl('options-plugin.php?config=Enhancement'); ?>"><?php _e('设置'); ?></a></li>
-                </ul>
+                <?php
+                $enhancementCurrentTab = 'summary';
+                $enhancementTabPreset = 'summary';
+                include 'manage-tabs.php';
+                ?>
             </div>
 
             <div class="col-mb-12" role="main">
@@ -287,34 +271,13 @@ include 'menu.php';
                     </div>
                 <?php endif; ?>
             </div>
-        </div>
-    </div>
-</div>
+<?php include 'manage-layout-end.php'; ?>
 
 <?php
-include 'copyright.php';
-include 'common-js.php';
+include 'manage-page-assets.php';
 ?>
 
-<script type="text/javascript">
-(function () {
-    $(document).ready(function () {
-        var table = $('.typecho-list-table');
-
-        table.tableSelectable({
-            checkEl     :   'input[type=checkbox]',
-            rowEl       :   'tr',
-            selectAllEl :   '.typecho-table-select-all',
-            actionEl    :   '.dropdown-menu a'
-        });
-
-        $('.btn-drop').dropdownMenu({
-            btnEl       :   '.dropdown-toggle',
-            menuEl      :   '.dropdown-menu'
-        });
-    });
-})();
-</script>
+<?php include 'manage-list-script.php'; ?>
 <?php include 'footer.php'; ?>
 
 <?php /** Enhancement */ ?>

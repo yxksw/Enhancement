@@ -1,33 +1,16 @@
 <?php
 
-/** 初始化组件 */
-Typecho_Widget::widget('Widget_Init');
-
-/** 注册一个初始化插件 */
-Typecho_Plugin::factory('admin/common.php')->begin();
-
-Typecho_Widget::widget('Widget_Options')->to($options);
-Typecho_Widget::widget('Widget_User')->to($user);
-Typecho_Widget::widget('Widget_Security')->to($security);
-Typecho_Widget::widget('Widget_Menu')->to($menu);
-
-/** 初始化上下文 */
-$request = $options->request;
-$response = $options->response;
-include 'header.php';
-include 'menu.php';
+include 'manage-init.php';
+include 'manage-page-start.php';
 ?>
 
-<div class="main">
-    <div class="body container">
-        <?php include 'page-title.php'; ?>
-        <div class="row typecho-page-main manage-metas">
+<?php include 'manage-layout-start.php'; ?>
             <div class="col-mb-12">
-                <ul class="typecho-option-tabs clearfix">
-                    <li><a href="<?php $options->adminUrl('extending.php?panel=Enhancement/manage-enhancement.php'); ?>"><?php _e('链接'); ?></a></li>
-                    <li class="current"><a href="<?php $options->adminUrl('extending.php?panel=Enhancement/manage-moments.php'); ?>"><?php _e('瞬间'); ?></a></li>
-                    <li><a href="<?php $options->adminUrl('options-plugin.php?config=Enhancement'); ?>"><?php _e('设置'); ?></a></li>
-                </ul>
+                <?php
+                $enhancementCurrentTab = 'moments';
+                $enhancementTabPreset = 'core';
+                include 'manage-tabs.php';
+                ?>
             </div>
 
             <div class="col-mb-12 col-tb-8" role="main">
@@ -143,32 +126,19 @@ include 'menu.php';
             <div class="col-mb-12 col-tb-4" role="form">
                 <?php Enhancement_Plugin::momentsForm()->render(); ?>
             </div>
-        </div>
-    </div>
-</div>
+<?php include 'manage-layout-end.php'; ?>
 
 <?php
-include 'copyright.php';
-include 'common-js.php';
+include 'manage-page-assets.php';
 ?>
 
+<?php
+$enhancementListHighlightPanel = isset($request->mid);
+include 'manage-list-script.php';
+?>
 <script type="text/javascript">
 (function () {
     $(document).ready(function () {
-        var table = $('.typecho-list-table');
-
-        table.tableSelectable({
-            checkEl     :   'input[type=checkbox]',
-            rowEl       :   'tr',
-            selectAllEl :   '.typecho-table-select-all',
-            actionEl    :   '.dropdown-menu a'
-        });
-
-        $('.btn-drop').dropdownMenu({
-            btnEl       :   '.dropdown-toggle',
-            menuEl      :   '.dropdown-menu'
-        });
-
         var locateBtn = $('#enhancement-moment-locate-btn');
         var locateStatus = $('#enhancement-moment-locate-status');
         var latitudeInput = $('input[name="latitude"]');
@@ -359,10 +329,6 @@ include 'common-js.php';
                 requestPosition(false);
             });
         }
-
-        <?php if (isset($request->mid)): ?>
-        $('.typecho-mini-panel').effect('highlight', '#AACB36');
-        <?php endif; ?>
     });
 })();
 </script>

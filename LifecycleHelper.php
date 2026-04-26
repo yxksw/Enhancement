@@ -5,6 +5,7 @@ class Enhancement_LifecycleHelper
     public static function activate($commentNotifierPanel)
     {
         Enhancement_SettingsHelper::ensurePluginConfigOptionExists();
+        self::ensurePanelFiles($commentNotifierPanel);
 
         $info = self::install();
         Helper::addPanel(3, 'Enhancement/manage-enhancement.php', _t('链接'), _t('链接审核与管理'), 'administrator');
@@ -38,6 +39,28 @@ class Enhancement_LifecycleHelper
         Enhancement_S3Helper::registerHooks();
 
         return _t($info);
+    }
+
+    private static function ensurePanelFiles($commentNotifierPanel)
+    {
+        $files = array(
+            'manage-enhancement.php',
+            'manage-moments.php',
+            'manage-ai-summary.php',
+            'manage-upload.php',
+            str_replace('Enhancement/', '', $commentNotifierPanel)
+        );
+
+        $missing = array();
+        foreach (array_unique($files) as $file) {
+            if (!is_file(__DIR__ . '/' . $file)) {
+                $missing[] = 'Enhancement/' . $file;
+            }
+        }
+
+        if (!empty($missing)) {
+            throw new Typecho_Plugin_Exception(_t('插件文件不完整，缺少：') . implode(', ', $missing));
+        }
     }
 
     public static function deactivate($commentNotifierPanel, $settings)

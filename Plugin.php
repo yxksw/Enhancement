@@ -5,7 +5,7 @@
  * 具体功能包含:插件/主题zip上传,友情链接,瞬间,网站地图,编辑器增强,站外链接跳转,评论邮件通知,QQ通知,常见视频链接 音乐链接 解析,AI摘要生成等
  * @package Enhancement
  * @author 老孙博客
- * @version 1.2.4
+ * @version 1.2.5
  * @link HTTPS://www.IMSUN.ORG
  * @dependence 14.10.10-*
  */
@@ -57,7 +57,7 @@ class Enhancement_Plugin implements Typecho_Plugin_Interface
 
     private static function settingsBackupNamePrefix()
     {
-        return 'plugin:Enhancement:backup:';
+        return 'enh:bak:';
     }
 
     private static function listSettingsBackups($limit = 5)

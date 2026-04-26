@@ -617,12 +617,75 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
 
     private function settingsBackupNamePrefix()
     {
+        return 'enh:bak:';
+    }
+
+    private function legacySettingsBackupNamePrefix()
+    {
         return 'plugin:Enhancement:backup:';
+    }
+
+    private function settingsBackupNamePrefixes()
+    {
+        return array(
+            $this->settingsBackupNamePrefix(),
+            $this->legacySettingsBackupNamePrefix()
+        );
     }
 
     private function settingsBackupKeepCount()
     {
         return 20;
+    }
+
+    private function getSettingsBackupTimestamp($name)
+    {
+        $name = trim((string)$name);
+        if (preg_match('/^enh:bak:(\d{14})-[A-Za-z0-9]+$/', $name, $matches)) {
+            return $matches[1];
+        }
+        if (preg_match('/^plugin:Enhancement:backup:(\d{14})-[A-Za-z0-9]+$/', $name, $matches)) {
+            return $matches[1];
+        }
+
+        return '';
+    }
+
+    private function compareSettingsBackupRows($left, $right)
+    {
+        $leftName = isset($left['name']) ? (string)$left['name'] : '';
+        $rightName = isset($right['name']) ? (string)$right['name'] : '';
+        $leftTime = $this->getSettingsBackupTimestamp($leftName);
+        $rightTime = $this->getSettingsBackupTimestamp($rightName);
+
+        if ($leftTime === $rightTime) {
+            return strcmp($rightName, $leftName);
+        }
+
+        return strcmp($rightTime, $leftTime);
+    }
+
+    private function getSettingsBackupSnapshotRows($withValue = false)
+    {
+        $rows = array();
+        $fields = $withValue ? array('name', 'value') : array('name');
+
+        foreach ($this->settingsBackupNamePrefixes() as $prefix) {
+            $currentRows = $this->db->fetchAll(
+                $this->db->select(...$fields)
+                    ->from('table.options')
+                    ->where('name LIKE ?', $prefix . '%')
+                    ->where('user = ?', 0)
+                    ->order('name', Typecho_Db::SORT_DESC)
+            );
+
+            if (is_array($currentRows)) {
+                $rows = array_merge($rows, $currentRows);
+            }
+        }
+
+        usort($rows, array($this, 'compareSettingsBackupRows'));
+        return $rows;
     }
 
     private function createSettingsBackupSnapshot(array $settings)
@@ -658,19 +721,12 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
 
     private function pruneSettingsBackupSnapshots()
     {
-        $prefix = $this->settingsBackupNamePrefix();
         $keepCount = intval($this->settingsBackupKeepCount());
         if ($keepCount < 1) {
             $keepCount = 1;
         }
 
-        $rows = $this->db->fetchAll(
-            $this->db->select('name')
-                ->from('table.options')
-                ->where('name LIKE ?', $prefix . '%')
-                ->where('user = ?', 0)
-                ->order('name', Typecho_Db::SORT_DESC)
-        );
+        $rows = $this->getSettingsBackupSnapshotRows(false);
 
         if (!is_array($rows) || count($rows) <= $keepCount) {
             return;
@@ -696,30 +752,13 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
 
     private function getLatestSettingsBackupSnapshot()
     {
-        $prefix = $this->settingsBackupNamePrefix();
-
-        return $this->db->fetchRow(
-            $this->db->select('name', 'value')
-                ->from('table.options')
-                ->where('name LIKE ?', $prefix . '%')
-                ->where('user = ?', 0)
-                ->order('name', Typecho_Db::SORT_DESC)
-                ->limit(1)
-        );
+        $rows = $this->getSettingsBackupSnapshotRows(true);
+        return isset($rows[0]) ? $rows[0] : null;
     }
 
     private function countSettingsBackupSnapshots()
     {
-        $prefix = $this->settingsBackupNamePrefix();
-
-        $row = $this->db->fetchObject(
-            $this->db->select(array('COUNT(name)' => 'num'))
-                ->from('table.options')
-                ->where('name LIKE ?', $prefix . '%')
-                ->where('user = ?', 0)
-        );
-
-        return isset($row->num) ? intval($row->num) : 0;
+        return count($this->getSettingsBackupSnapshotRows(false));
     }
 
     private function isValidSettingsBackupName($name)
@@ -729,12 +768,8 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             return false;
         }
 
-        $prefix = $this->settingsBackupNamePrefix();
-        if (strpos($name, $prefix) !== 0) {
-            return false;
-        }
-
-        return preg_match('/^plugin:Enhancement:backup:\d{14}-[A-Za-z0-9]+$/', $name) === 1;
+        return preg_match('/^enh:bak:\d{14}-[A-Za-z0-9]+$/', $name) === 1
+            || preg_match('/^plugin:Enhancement:backup:\d{14}-[A-Za-z0-9]+$/', $name) === 1;
     }
 
     private function getSettingsBackupSnapshotByName($name)

@@ -4,7 +4,33 @@ class Enhancement_SettingsHelper
 {
     private static function settingsBackupNamePrefix()
     {
+        return 'enh:bak:';
+    }
+
+    private static function legacySettingsBackupNamePrefix()
+    {
         return 'plugin:Enhancement:backup:';
+    }
+
+    private static function settingsBackupNamePrefixes()
+    {
+        return array(
+            self::settingsBackupNamePrefix(),
+            self::legacySettingsBackupNamePrefix()
+        );
+    }
+
+    private static function extractSettingsBackupTimestamp($name)
+    {
+        $name = trim((string)$name);
+        if (preg_match('/^enh:bak:(\d{14})-[A-Za-z0-9]+$/', $name, $matches)) {
+            return $matches[1];
+        }
+        if (preg_match('/^plugin:Enhancement:backup:(\d{14})-[A-Za-z0-9]+$/', $name, $matches)) {
+            return $matches[1];
+        }
+
+        return '';
     }
 
     public static function listSettingsBackups($limit = 5)
@@ -19,20 +45,44 @@ class Enhancement_SettingsHelper
 
         try {
             $db = Typecho_Db::get();
-            $prefix = self::settingsBackupNamePrefix();
-            $rows = $db->fetchAll(
-                $db->select('name')
-                    ->from('table.options')
-                    ->where('name LIKE ?', $prefix . '%')
-                    ->where('user = ?', 0)
-                    ->order('name', Typecho_Db::SORT_DESC)
-                    ->limit($limit)
-            );
+            $rows = array();
+            foreach (self::settingsBackupNamePrefixes() as $prefix) {
+                $currentRows = $db->fetchAll(
+                    $db->select('name')
+                        ->from('table.options')
+                        ->where('name LIKE ?', $prefix . '%')
+                        ->where('user = ?', 0)
+                        ->order('name', Typecho_Db::SORT_DESC)
+                        ->limit($limit)
+                );
+                if (is_array($currentRows)) {
+                    $rows = array_merge($rows, $currentRows);
+                }
+            }
+
+            usort($rows, array(__CLASS__, 'compareSettingsBackupRows'));
+            if (count($rows) > $limit) {
+                $rows = array_slice($rows, 0, $limit);
+            }
 
             return is_array($rows) ? $rows : array();
         } catch (Exception $e) {
             return array();
         }
+    }
+
+    private static function compareSettingsBackupRows($left, $right)
+    {
+        $leftName = isset($left['name']) ? (string)$left['name'] : '';
+        $rightName = isset($right['name']) ? (string)$right['name'] : '';
+        $leftTime = self::extractSettingsBackupTimestamp($leftName);
+        $rightTime = self::extractSettingsBackupTimestamp($rightName);
+
+        if ($leftTime === $rightTime) {
+            return strcmp($rightName, $leftName);
+        }
+
+        return strcmp($rightTime, $leftTime);
     }
 
     public static function pluginSettings($options = null)

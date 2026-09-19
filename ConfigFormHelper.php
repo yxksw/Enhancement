@@ -543,6 +543,21 @@ class Enhancement_ConfigFormHelper
         $smtpPort->setAttribute('class', 'typecho-option smtp');
         $form->addInput($smtpPort);
 
+        $smtpTestUrl = Helper::security()->getIndex('/action/enhancement-edit?do=smtp-test-mail');
+        $smtpActionRow = new Typecho_Widget_Helper_Form_Element_Fake('smtp_action_row', null);
+        $smtpActionRow->setAttribute('class', 'typecho-option enhancement-option-no-bullet');
+        $smtpActionRow->input->setAttribute('type', 'hidden');
+        $smtpActionRow->description(
+            '<div class="enhancement-action-row">'
+            . '<a class="btn enhancement-action-btn enhancement-smtp-test" href="' . htmlspecialchars($smtpTestUrl, ENT_QUOTES, 'UTF-8') . '">' . _t('发送测试邮件') . '</a>'
+            . '<span class="enhancement-action-note enhancement-smtp-test-status" aria-live="polite">' . _t('使用当前填写的设置测试，无需先保存；邮件发送到站长收件邮箱，未填写时发送到 SMTP 邮箱地址') . '</span>'
+            . '</div>'
+        );
+        if (isset($smtpActionRow->container)) {
+            $smtpActionRow->container->setAttribute('style', 'list-style:none;margin:0;padding:0;');
+        }
+        $form->addInput($smtpActionRow);
+
         $log = new Typecho_Widget_Helper_Form_Element_Radio(
             'log',
             array('1' => _t('启用'), '0' => _t('禁用')),

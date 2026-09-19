@@ -213,6 +213,8 @@ form.enhancement-settings-form.enhancement-settings-form--enhanced select{width:
 .enhancement-settings-app .enhancement-backup-box{margin-top:0;border-color:#dce6f5;border-radius:8px;background:#f8fbff;}
 .enhancement-settings-app .enhancement-update-box{margin-top:0;padding:12px;border:1px solid #dce6f5;border-radius:8px;background:#f8fbff;}
 .enhancement-settings-app .enhancement-action-note{color:#64748b;}
+.enhancement-settings-app .enhancement-smtp-test-status.is-success{color:#15803d;}
+.enhancement-settings-app .enhancement-smtp-test-status.is-error{color:#b42318;}
 .enhancement-settings-empty{display:none;padding:32px 16px;text-align:center;font-size:14px;line-height:1.8;color:#64748b;background:#fff;border:1px dashed #d8e2f0;border-radius:8px;}
 .enhancement-settings-app.is-searching .enhancement-settings-empty.is-visible{display:block;}
 @media (max-width: 1024px){
@@ -470,6 +472,50 @@ form.enhancement-settings-form.enhancement-settings-form--enhanced select{width:
             $box.find('.enhancement-update-status').html(html);
             $box.find('.enhancement-update-upgrade').toggleClass('is-hidden', !hasUpdate);
         }
+
+        $app.on('click', '.enhancement-smtp-test', function (event) {
+            event.preventDefault();
+
+            var $button = $(this);
+            var url = $button.attr('href') || '';
+            if (!url || $button.data('loading')) {
+                return;
+            }
+
+            var fieldNames = ['STMPHost', 'SMTPUserName', 'SMTPPassword', 'from', 'fromName', 'adminfrom', 'SMTPSecure', 'SMTPPort'];
+            var selector = $.map(fieldNames, function (name) {
+                return '[name="' + name + '"]';
+            }).join(',');
+            var originalText = $button.text();
+            var $status = $button.closest('.enhancement-action-row').find('.enhancement-smtp-test-status');
+
+            $button.data('loading', '1').text('发送中...');
+            $status.removeClass('is-success is-error').text('正在连接 SMTP 服务器并发送测试邮件...');
+
+            $.ajax({
+                url: url,
+                type: 'POST',
+                dataType: 'json',
+                data: $form.find(selector).serialize(),
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).done(function (response) {
+                var success = !!(response && response.success);
+                $status
+                    .toggleClass('is-success', success)
+                    .toggleClass('is-error', !success)
+                    .text(response && response.message ? response.message : (success ? '测试邮件发送成功。' : '测试邮件发送失败。'));
+            }).fail(function (xhr) {
+                var response = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+                $status
+                    .removeClass('is-success')
+                    .addClass('is-error')
+                    .text(response && response.message ? response.message : '测试邮件发送失败，请检查 SMTP 设置和服务器网络。');
+            }).always(function () {
+                $button.data('loading', '').text(originalText);
+            });
+        });
 
         $app.on('click', '.enhancement-update-check', function (event) {
             event.preventDefault();

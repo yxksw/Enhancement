@@ -811,7 +811,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         $this->response->goBack();
     }
 
-    private function qqTestResponse($success, $message, $statusCode = 200)
+    private function testActionResponse($success, $message, $statusCode = 200)
     {
         $statusCode = intval($statusCode);
         if ($statusCode > 0) {
@@ -1766,12 +1766,12 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         $qqNum = isset($settings['qq']) ? trim((string)$settings['qq']) : '';
 
         if ($apiUrl === '' || $qqNum === '') {
-            $this->qqTestResponse(false, _t('QQ通知测试失败：请先填写 QQ 号 与 机器人 API 地址'), 400);
+            $this->testActionResponse(false, _t('QQ通知测试失败：请先填写 QQ 号 与 机器人 API 地址'), 400);
             return;
         }
 
         if (!function_exists('curl_init')) {
-            $this->qqTestResponse(false, _t('QQ通知测试失败：当前环境缺少 cURL 扩展'), 500);
+            $this->testActionResponse(false, _t('QQ通知测试失败：当前环境缺少 cURL 扩展'), 500);
             return;
         }
 
@@ -1821,7 +1821,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         if (curl_errno($ch)) {
             $error = curl_error($ch);
             curl_close($ch);
-            $this->qqTestResponse(false, _t('QQ通知测试失败：%s', $error), 500);
+            $this->testActionResponse(false, _t('QQ通知测试失败：%s', $error), 500);
             return;
         }
 
@@ -1839,7 +1839,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         }
 
         if ($isOk) {
-            $this->qqTestResponse(true, _t('QQ通知测试发送成功，请检查 QQ 是否收到消息。'), 200);
+            $this->testActionResponse(true, _t('QQ通知测试发送成功，请检查 QQ 是否收到消息。'), 200);
             return;
         }
 
@@ -1847,7 +1847,101 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
         if ($bodyPreview === '') {
             $bodyPreview = _t('empty response');
         }
-        $this->qqTestResponse(false, _t('QQ通知测试失败（HTTP %d）：%s', $httpCode, $bodyPreview), 500);
+        $this->testActionResponse(false, _t('QQ通知测试失败（HTTP %d）：%s', $httpCode, $bodyPreview), 500);
+    }
+
+    public function sendSmtpTestMail()
+    {
+        $host = trim((string)$this->request->get('STMPHost'));
+        $username = trim((string)$this->request->get('SMTPUserName'));
+        $password = (string)$this->request->get('SMTPPassword');
+        $from = trim((string)$this->request->get('from'));
+        $fromName = trim((string)$this->request->get('fromName'));
+        $adminFrom = trim((string)$this->request->get('adminfrom'));
+        $secure = strtolower(trim((string)$this->request->get('SMTPSecure')));
+        $portValue = trim((string)$this->request->get('SMTPPort'));
+
+        if ($host === '' || $username === '' || $password === '' || $from === '' || $portValue === '') {
+            $this->testActionResponse(false, _t('SMTP 测试失败：请完整填写服务器地址、登录用户、登录密码、SMTP 邮箱地址和端口'), 400);
+            return;
+        }
+
+        if (!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            $this->testActionResponse(false, _t('SMTP 测试失败：SMTP 邮箱地址格式不正确'), 400);
+            return;
+        }
+
+        if ($adminFrom !== '' && !filter_var($adminFrom, FILTER_VALIDATE_EMAIL)) {
+            $this->testActionResponse(false, _t('SMTP 测试失败：站长收件邮箱格式不正确'), 400);
+            return;
+        }
+
+        $port = filter_var($portValue, FILTER_VALIDATE_INT, array(
+            'options' => array('min_range' => 1, 'max_range' => 65535)
+        ));
+        if ($port === false) {
+            $this->testActionResponse(false, _t('SMTP 测试失败：端口必须是 1 到 65535 之间的整数'), 400);
+            return;
+        }
+
+        if (!in_array($secure, array('', 'ssl', 'tls'), true)) {
+            $this->testActionResponse(false, _t('SMTP 测试失败：不支持所选加密模式'), 400);
+            return;
+        }
+
+        $recipient = $adminFrom !== '' ? $adminFrom : $from;
+        if ($fromName === '') {
+            $fromName = 'Enhancement';
+        }
+
+        try {
+            require_once __DIR__ . '/CommentNotifier/PHPMailer/PHPMailer.php';
+            require_once __DIR__ . '/CommentNotifier/PHPMailer/SMTP.php';
+            require_once __DIR__ . '/CommentNotifier/PHPMailer/Exception.php';
+
+            $mail = new \PHPMailer\PHPMailer\PHPMailer(false);
+            $mail->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
+            $mail->Encoding = \PHPMailer\PHPMailer\PHPMailer::ENCODING_BASE64;
+            $mail->isSMTP();
+            $mail->Host = $host;
+            $mail->SMTPAuth = true;
+            $mail->Username = $username;
+            $mail->Password = $password;
+            $mail->Port = (int)$port;
+            $mail->Timeout = 10;
+            if ($secure !== '') {
+                $mail->SMTPSecure = $secure;
+            }
+
+            $siteUrl = isset($this->options->siteUrl) ? trim((string)$this->options->siteUrl) : '';
+            $safeSiteUrl = htmlspecialchars($siteUrl !== '' ? $siteUrl : 'unknown', ENT_QUOTES, 'UTF-8');
+            $sentAt = date('Y-m-d H:i:s');
+
+            $mail->setFrom($from, $fromName);
+            $mail->addAddress($recipient);
+            $mail->Subject = _t('Enhancement SMTP 发信测试');
+            $mail->isHTML(true);
+            $mail->Body = '<p>这是一封 Enhancement SMTP 测试邮件。</p>'
+                . '<p>站点：' . $safeSiteUrl . '<br>发送时间：' . htmlspecialchars($sentAt, ENT_QUOTES, 'UTF-8') . '</p>'
+                . '<p>如果收到此邮件，说明当前 SMTP 配置可以正常发信。</p>';
+            $mail->AltBody = "这是一封 Enhancement SMTP 测试邮件。\n站点："
+                . ($siteUrl !== '' ? $siteUrl : 'unknown')
+                . "\n发送时间：" . $sentAt
+                . "\n如果收到此邮件，说明当前 SMTP 配置可以正常发信。";
+
+            if (!$mail->send()) {
+                $error = trim((string)$mail->ErrorInfo);
+                if ($error === '') {
+                    $error = _t('SMTP 服务器未返回具体错误');
+                }
+                $this->testActionResponse(false, _t('SMTP 测试失败：%s', $error), 500);
+                return;
+            }
+
+            $this->testActionResponse(true, _t('测试邮件发送成功，已发送到 %s，请检查收件箱。', $recipient), 200);
+        } catch (Exception $e) {
+            $this->testActionResponse(false, _t('SMTP 测试失败：%s', $e->getMessage()), 500);
+        }
     }
 
     public function backupPluginSettings()
@@ -3119,6 +3213,7 @@ class Enhancement_Action extends Typecho_Widget implements Widget_Interface_Do
             'restore-settings' => 'restorePluginSettings',
             'delete-backup' => 'deletePluginSettingsBackup',
             'qq-test-notify' => 'sendQqTestNotify',
+            'smtp-test-mail' => 'sendSmtpTestMail',
             'qq-queue-retry' => 'retryQqNotifyQueue',
             'qq-queue-clear' => 'clearQqNotifyQueue',
             'upload-package' => 'uploadPackage',

@@ -19,6 +19,28 @@ class Enhancement_ContentParseHelper
             Enhancement_GoRedirectHelper::upgradeCommentWidgetUrl($widget);
         }
 
+        $protectedBlocks = array();
+        $placeholderPrefix = 'enhancement-protected-code-' . sha1($text) . '-';
+        $protectedText = preg_replace_callback(
+            '/(<pre\b[^>]*>[\s\S]*?<\/pre\s*>|<code\b[^>]*>[\s\S]*?<\/code\s*>)/i',
+            function ($matches) use (&$protectedBlocks, $placeholderPrefix) {
+                $placeholder = '<!--' . $placeholderPrefix . count($protectedBlocks) . '-->';
+                $protectedBlocks[$placeholder] = $matches[0];
+                return $placeholder;
+            },
+            $text
+        );
+        if (!is_string($protectedText)) {
+            return self::parseSegment($text, $widget, $isContentWidget, $isCommentWidget);
+        }
+
+        $text = self::parseSegment($protectedText, $widget, $isContentWidget, $isCommentWidget);
+
+        return empty($protectedBlocks) ? $text : strtr($text, $protectedBlocks);
+    }
+
+    private static function parseSegment($text, $widget, $isContentWidget, $isCommentWidget)
+    {
         $text = preg_replace_callback(
             "/<(?:links|enhancement)\\s*(\\d*)\\s*(\\w*)\\s*(\\d*)>\\s*(.*?)\\s*<\\/(?:links|enhancement)>/is",
             array('Enhancement_Plugin', 'parseCallback'),
